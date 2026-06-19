@@ -2,7 +2,7 @@
 // @name         FCR Lite Ultra V2
 // @version      2.4.0
 // @description  FCR Lite + Stow Palette + God Mode (print/floor) + Bin Check Generator + Hazmat Level Display — All-in-one + Module Toggle Panel
-// @author       kyleldri + jeanbayd + mayukoth + vallenda + lindorrl (merged)
+// @author       @jeanbayd
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2*
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2/*
 // @match        https://fcresearch-eu.aka.amazon.com/ETZ2*
@@ -19,6 +19,10 @@
 // @connect      pandash.amazon.com
 // @connect      prepmanager-dub.amazon.com
 // @connect      roboscout.amazon.com
+// @connect      fcresearch-eu.aka.amazon.com
+// @connect      fcresearch-na.aka.amazon.com
+// @connect      aft-sherlock.eu.aftx.amazonoperations.app
+// @connect      qi-fcresearch-eu.corp.amazon.com
 // @connect      localhost
 // @require      https://code.jquery.com/jquery-3.6.0.min.js
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js
@@ -1042,25 +1046,11 @@ body::after {
                         const doc = parser.parseFromString(response.responseText, 'text/html');
                         const baseUrl = getURL('fcresearch');
 
-                        // Cherche l'image produit de façon ciblée, en excluant les pixels tracking et logos
-                        let imageSrc = null;
-                        const candidates = doc.querySelectorAll('img[src]');
-                        for (const img of candidates) {
-                            const src = img.getAttribute('src') || '';
-                            // Ignore data URIs, pixels tracking, et images trop petites
-                            if (src.startsWith('data:')) continue;
-                            if (img.width > 0 && img.width < 10) continue;
-                            if (img.height > 0 && img.height < 10) continue;
-                            // Préfère les images Amazon produit (ssl-images, images-na, m.media-amazon)
-                            if (/ssl-images-amazon|images-na|m\.media-amazon|ecx\.images-amazon/.test(src)) {
-                                imageSrc = src;
-                                break;
-                            }
-                            // Sinon prend la première image qui ressemble à une vraie image (pas un pixel)
-                            if (!imageSrc && src && !src.includes('pixel') && !src.includes('beacon') && !src.includes('tracker')) {
-                                imageSrc = src;
-                            }
-                        }
+                        // Prend la première image trouvée dans la réponse (approche simple et fiable)
+                        const img = doc.querySelector('img') ||
+                                    doc.querySelector('.product-image') ||
+                                    doc.querySelector('[data-image]');
+                        let imageSrc = img ? (img.getAttribute('src') || img.getAttribute('data-image') || '') : null;
 
                         if (imageSrc) {
                             // Résolution URL relative → absolue
