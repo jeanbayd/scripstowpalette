@@ -5,7 +5,7 @@
 // @description  Ajoute un panel Palette land / Stow from palette / Palette land AR floor — bilingue FR/EN, injection stable
 // @author       @jeanbayd
 // @match        https://fcresearch-eu.aka.amazon.com/*
-// @match        https://qi-fcresearch-eu.aka.amazon.com/*
+// @match        https://qi-fcresearch-eu.corp.amazon.com/*
 // @grant        none
 // ==/UserScript==
 
