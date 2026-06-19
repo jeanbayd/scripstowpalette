@@ -2,7 +2,7 @@
 // @name         FCR Lite Ultra V2
 // @version      2.3.3
 // @description  FCR Lite + Stow Palette + God Mode (print/floor) + Bin Check Generator + Hazmat Level Display — All-in-one + Module Toggle Panel
-// @author       kyleldri + jeanbayd + mayukoth + vallenda + lindorrl (merged)
+// @author       @jeanbayd
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2*
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2/*
 // @match        https://fcresearch-eu.aka.amazon.com/ETZ2*
