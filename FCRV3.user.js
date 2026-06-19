@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         FCR Lite Ultra V2
-// @version      2.2.1
+// @version      2.3.3
 // @description  FCR Lite + Stow Palette + God Mode (print/floor) + Bin Check Generator + Hazmat Level Display — All-in-one + Module Toggle Panel
-// @author       @jeanbayd
+// @author       kyleldri + jeanbayd + mayukoth + vallenda + lindorrl (merged)
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2*
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2/*
 // @match        https://fcresearch-eu.aka.amazon.com/ETZ2*
@@ -173,7 +173,37 @@
         });
     }
 
-    function waitForKeyElements(e,t,a,n){var o,r;(o=void 0===n?$(e):$(n).contents().find(e))&&o.length>0?(r=!0,o.each(function(){var e=$(this);e.data("alreadyFound")||!1||(t(e)?r=!1:e.data("alreadyFound",!0))})):r=!1;var l=waitForKeyElements.controlObj||{},i=e.replace(/[^\w]/g,"_"),c=l[i];r&&a&&c?(clearInterval(c),delete l[i]):c||(c=setInterval(function(){waitForKeyElements(e,t,a,n)},300),l[i]=c),waitForKeyElements.controlObj=l}
+    // waitForKeyElements : remplace l'ancienne version minifiée (setInterval 300ms infini).
+    // Observe le DOM via MutationObserver, appelle le callback sur chaque nouvel élément trouvé,
+    // marque les éléments déjà traités pour éviter les doublons.
+    // Si `runOnce` est false (défaut), continue à surveiller après la 1ère occurrence.
+    function waitForKeyElements(selector, callback, runOnce = false) {
+        const seen = new WeakSet();
+
+        function processMatches() {
+            const elements = document.querySelectorAll(selector);
+            let matched = false;
+            elements.forEach(el => {
+                if (seen.has(el)) return;
+                seen.add(el);
+                matched = true;
+                // Encapsule dans un objet jQuery-like pour compatibilité avec les callbacks existants
+                const jqLike = $(el);
+                callback(jqLike);
+            });
+            return matched;
+        }
+
+        // Traitement immédiat si des éléments sont déjà présents
+        const foundImmediately = processMatches();
+        if (foundImmediately && runOnce) return;
+
+        const obs = new MutationObserver(() => {
+            const found = processMatches();
+            if (found && runOnce) obs.disconnect();
+        });
+        obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
+    }
 
     function debounce(func, delay) {
         let timeoutId;
@@ -290,6 +320,208 @@
             gradPanel:'linear-gradient(160deg, #010d18 0%, #021e30 50%, #010d18 100%)',
             gradAccent:'linear-gradient(90deg, #00e5ff 0%, #80ffea 40%, #48cae4 70%, #00e5ff 100%)',
             gradBtn:'linear-gradient(135deg, #033552 0%, #007ea8 60%, #00e5ff 100%)'
+        },
+        // ── THÈMES ANIMÉS ──────────────────────────────────────────────
+        wave: {
+            bg1:'#020b18', bg2:'#051428', bg3:'#082040',
+            accent:'#38bdf8', accentDark:'#0369a1', label:'🌊 Wave',
+            prepBg:'#051428', prepNoPrep:'#fbbf24', prepYes:'#7dd3fc',
+            isGradient:true, isAnimated:true,
+            gradHeader:'linear-gradient(135deg, #082040 0%, #0369a1 50%, #38bdf8 100%)',
+            gradPanel:'linear-gradient(160deg, #020b18 0%, #051428 100%)',
+            gradAccent:'linear-gradient(90deg, #38bdf8 0%, #7dd3fc 50%, #38bdf8 100%)',
+            gradBtn:'linear-gradient(135deg, #082040 0%, #0369a1 100%)',
+            animCSS:`
+@keyframes fcr-wave-bg {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+@keyframes fcr-wave-header {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+body, #side-bar {
+    background: linear-gradient(135deg, #020b18, #051a38, #082040, #051428, #020b18) !important;
+    background-size: 400% 400% !important;
+    animation: fcr-wave-bg 12s ease infinite !important;
+}
+#fcr-theme-panel, #fcr-module-panel {
+    background: linear-gradient(135deg, #051428, #082040, #051428) !important;
+    background-size: 300% 300% !important;
+    animation: fcr-wave-header 8s ease infinite !important;
+}
+#hazmat-fcr-header, #fcr-theme-header, #fcr-module-header {
+    background: linear-gradient(135deg, #082040, #0369a1, #38bdf8, #0369a1, #082040) !important;
+    background-size: 300% 300% !important;
+    animation: fcr-wave-header 6s ease infinite !important;
+}`
+        },
+        pulse: {
+            bg1:'#0a0015', bg2:'#130025', bg3:'#220040',
+            accent:'#e040fb', accentDark:'#6a0080', label:'⚡ Pulse',
+            prepBg:'#130025', prepNoPrep:'#ffd740', prepYes:'#ea80fc',
+            isGradient:true, isAnimated:true,
+            gradHeader:'linear-gradient(135deg, #220040 0%, #6a0080 50%, #e040fb 100%)',
+            gradPanel:'linear-gradient(160deg, #0a0015 0%, #130025 100%)',
+            gradAccent:'linear-gradient(90deg, #e040fb 0%, #ea80fc 50%, #e040fb 100%)',
+            gradBtn:'linear-gradient(135deg, #220040 0%, #6a0080 100%)',
+            animCSS:`
+@keyframes fcr-pulse-glow {
+    0%, 100% { box-shadow: 0 0 8px #e040fb44, 0 0 20px #e040fb22; border-color: #6a0080; }
+    50%       { box-shadow: 0 0 18px #e040fbaa, 0 0 40px #e040fb55; border-color: #e040fb; }
+}
+@keyframes fcr-pulse-accent {
+    0%, 100% { opacity: 1; text-shadow: 0 0 6px #e040fb88; }
+    50%       { opacity: 0.75; text-shadow: 0 0 14px #e040fbff; }
+}
+@keyframes fcr-pulse-bg {
+    0%, 100% { background-color: #0a0015; }
+    50%       { background-color: #130020; }
+}
+body, #side-bar { animation: fcr-pulse-bg 4s ease-in-out infinite !important; }
+#fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel {
+    animation: fcr-pulse-glow 4s ease-in-out infinite !important;
+}
+#hazmat-fcr-header-title, #fcr-theme-label, #fcr-module-label {
+    animation: fcr-pulse-accent 4s ease-in-out infinite !important;
+}`
+        },
+        stars: {
+            bg1:'#00010d', bg2:'#00021a', bg3:'#000428',
+            accent:'#ffe566', accentDark:'#7a6800', label:'🌌 Stars',
+            prepBg:'#00021a', prepNoPrep:'#ff9944', prepYes:'#aaddff',
+            isGradient:true, isAnimated:true,
+            gradHeader:'linear-gradient(135deg, #000428 0%, #001060 50%, #0020a0 100%)',
+            gradPanel:'linear-gradient(160deg, #00010d 0%, #00021a 100%)',
+            gradAccent:'linear-gradient(90deg, #ffe566 0%, #ffffff 50%, #ffe566 100%)',
+            gradBtn:'linear-gradient(135deg, #000428 0%, #001060 100%)',
+            animCSS:`
+@keyframes fcr-star-twinkle-1 {
+    0%,100% { opacity:0.2; transform:scale(0.8); } 50% { opacity:1; transform:scale(1.3); }
+}
+@keyframes fcr-star-twinkle-2 {
+    0%,100% { opacity:0.7; transform:scale(1.1); } 60% { opacity:0.1; transform:scale(0.7); }
+}
+@keyframes fcr-star-twinkle-3 {
+    0%,100% { opacity:0.4; transform:scale(1); } 30% { opacity:1; transform:scale(1.5); }
+}
+@keyframes fcr-stars-drift {
+    0%   { background-position: 0px 0px, 0px 0px, 0px 0px; }
+    100% { background-position: 200px 300px, -150px 200px, 100px -100px; }
+}
+body, #side-bar {
+    background:
+        radial-gradient(1px 1px at 20% 15%, #fff 0%, transparent 100%),
+        radial-gradient(1px 1px at 60% 40%, #ffe566 0%, transparent 100%),
+        radial-gradient(1.5px 1.5px at 80% 70%, #aaddff 0%, transparent 100%),
+        radial-gradient(1px 1px at 35% 80%, #fff 0%, transparent 100%),
+        radial-gradient(1px 1px at 55% 25%, #ffe566 0%, transparent 100%),
+        radial-gradient(1px 1px at 90% 10%, #fff 0%, transparent 100%),
+        radial-gradient(1.5px 1.5px at 10% 60%, #aaddff 0%, transparent 100%),
+        radial-gradient(1px 1px at 70% 90%, #fff 0%, transparent 100%),
+        #00010d !important;
+    background-size: 200px 200px, 300px 300px, 250px 250px, 180px 180px,
+                     220px 220px, 150px 150px, 280px 280px, 200px 200px, cover !important;
+    animation: fcr-stars-drift 60s linear infinite !important;
+}
+#fcr-theme-panel, #fcr-module-panel {
+    background: linear-gradient(180deg, #000428 0%, #00021a 100%) !important;
+}
+#hazmat-fcr-header, #fcr-theme-header, #fcr-module-header {
+    background: linear-gradient(135deg, #000428, #001060, #0020a0) !important;
+}`
+        },
+        ember: {
+            bg1:'#0d0200', bg2:'#1c0400', bg3:'#300800',
+            accent:'#ff6a00', accentDark:'#7a2a00', label:'🔥 Ember',
+            prepBg:'#1c0400', prepNoPrep:'#ffe066', prepYes:'#ff9eb5',
+            isGradient:true, isAnimated:true,
+            gradHeader:'linear-gradient(135deg, #300800 0%, #7a2a00 45%, #ff6a00 100%)',
+            gradPanel:'linear-gradient(160deg, #0d0200 0%, #1c0400 55%, #0d0200 100%)',
+            gradAccent:'linear-gradient(90deg, #ff6a00 0%, #ffcc33 50%, #ff4500 100%)',
+            gradBtn:'linear-gradient(135deg, #300800 0%, #cc3300 100%)',
+            animCSS:`
+@keyframes fcr-ember-flicker {
+    0%,100% { background-position: 50% 100%; opacity:1; }
+    25%      { background-position: 45% 90%; opacity:0.92; }
+    50%      { background-position: 55% 95%; opacity:0.97; }
+    75%      { background-position: 48% 85%; opacity:0.94; }
+}
+@keyframes fcr-ember-glow {
+    0%,100% { box-shadow: 0 0 10px #ff6a0055, inset 0 0 15px #ff2a0022; }
+    50%      { box-shadow: 0 0 25px #ff6a00aa, inset 0 0 30px #ff2a0055; }
+}
+@keyframes fcr-ember-header {
+    0%,100% { background-position: 0% 50%; }
+    33%      { background-position: 60% 30%; }
+    66%      { background-position: 40% 70%; }
+}
+body, #side-bar {
+    background: radial-gradient(ellipse at 50% 120%, #3d0a00 0%, #1c0400 40%, #0d0200 100%) !important;
+    animation: fcr-ember-flicker 5s ease-in-out infinite !important;
+}
+#fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel {
+    animation: fcr-ember-glow 3s ease-in-out infinite !important;
+}
+#hazmat-fcr-header, #fcr-theme-header, #fcr-module-header {
+    background: linear-gradient(135deg, #300800, #7a2a00, #ff6a00, #cc3300, #300800) !important;
+    background-size: 300% 300% !important;
+    animation: fcr-ember-header 4s ease-in-out infinite !important;
+}`
+        },
+        matrix: {
+            bg1:'#000800', bg2:'#001200', bg3:'#001f00',
+            accent:'#00ff41', accentDark:'#004d00', label:'💠 Matrix',
+            prepBg:'#001200', prepNoPrep:'#ffe566', prepYes:'#80ffb0',
+            isGradient:true, isAnimated:true,
+            gradHeader:'linear-gradient(135deg, #001f00 0%, #004d00 50%, #00ff41 100%)',
+            gradPanel:'linear-gradient(160deg, #000800 0%, #001200 100%)',
+            gradAccent:'linear-gradient(90deg, #00ff41 0%, #80ffb0 50%, #00ff41 100%)',
+            gradBtn:'linear-gradient(135deg, #001f00 0%, #004d00 100%)',
+            animCSS:`
+@keyframes fcr-matrix-scan {
+    0%   { transform: translateY(-100%); opacity: 0; }
+    5%   { opacity: 0.12; }
+    95%  { opacity: 0.12; }
+    100% { transform: translateY(100vh); opacity: 0; }
+}
+@keyframes fcr-matrix-flicker {
+    0%,100% { opacity:1; }
+    92%     { opacity:1; }
+    93%     { opacity:0.7; }
+    94%     { opacity:1; }
+    97%     { opacity:0.85; }
+    98%     { opacity:1; }
+}
+@keyframes fcr-matrix-text-glow {
+    0%,100% { text-shadow: 0 0 4px #00ff4188; color: #00ff41; }
+    50%      { text-shadow: 0 0 12px #00ff41cc, 0 0 24px #00ff4144; color: #80ffb0; }
+}
+body, #side-bar {
+    background: #000800 !important;
+    animation: fcr-matrix-flicker 8s step-end infinite !important;
+    position: relative !important;
+}
+body::after {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 120px;
+    background: linear-gradient(180deg, transparent 0%, #00ff4115 50%, transparent 100%);
+    pointer-events: none;
+    z-index: 9998;
+    animation: fcr-matrix-scan 6s linear infinite !important;
+}
+#hazmat-fcr-header-title, #fcr-theme-label, #fcr-module-label,
+#hazmat-fcr-header a, #hazmat-fcr-arrow, #fcr-theme-arrow, #fcr-module-arrow {
+    animation: fcr-matrix-text-glow 3s ease-in-out infinite !important;
+}
+#hazmat-fcr-header, #fcr-theme-header, #fcr-module-header {
+    background: linear-gradient(135deg, #001f00, #004d00) !important;
+    border-bottom: 1px solid #00ff4144 !important;
+}`
         }
     };
 
@@ -363,6 +595,11 @@
             #fcr-theme-btn-magma  { background:${THEMES.magma.gradBtn}; color:#fff0e8; border-color:${THEMES.magma.accent}; text-shadow:0 1px 2px rgba(0,0,0,0.4); }
             #fcr-theme-btn-nebula { background:${THEMES.nebula.gradBtn}; color:#f6ecff; border-color:${THEMES.nebula.accent}; text-shadow:0 1px 2px rgba(0,0,0,0.4); }
             #fcr-theme-btn-glacier { background:${THEMES.glacier.gradBtn}; color:#e0faff; border-color:${THEMES.glacier.accent}; text-shadow:0 1px 4px rgba(0,200,255,0.5); box-shadow:0 0 8px rgba(0,229,255,0.3); }
+            #fcr-theme-btn-wave   { background:${THEMES.wave.gradBtn}; color:#e0f7ff; border-color:${THEMES.wave.accent}; }
+            #fcr-theme-btn-pulse  { background:${THEMES.pulse.gradBtn}; color:#fce4ff; border-color:${THEMES.pulse.accent}; animation:fcr-pulse-glow 4s ease-in-out infinite; }
+            #fcr-theme-btn-stars  { background:${THEMES.stars.gradBtn}; color:#fff8d6; border-color:${THEMES.stars.accent}; }
+            #fcr-theme-btn-ember  { background:${THEMES.ember.gradBtn}; color:#fff0e0; border-color:${THEMES.ember.accent}; }
+            #fcr-theme-btn-matrix { background:${THEMES.matrix.gradBtn}; color:#ccffdd; border-color:${THEMES.matrix.accent}; }
             #fcr-module-panel { background:#f0f0f0; border-bottom:2px solid #ccc; overflow:hidden; }
             #fcr-module-header { display:flex; align-items:center; justify-content:space-between; padding:7px 10px; cursor:pointer; border-bottom:1px solid #ccc; user-select:none; }
             #fcr-module-header:hover { background:#e0e0e0; }
@@ -376,13 +613,38 @@
             #fcr-module-panel .fcr-module-toggle .fcr-module-knob { position:absolute; width:11px; height:11px; background:white; border-radius:50%; top:2px; left:2px; transition:left 0.2s, right 0.2s; }
             #fcr-module-panel .fcr-module-toggle.on .fcr-module-knob { left:auto; right:2px; }
             #fcr-reload-notice { margin:5px 4px 2px 4px; padding:4px 6px; background:#fff3cd; border:1px solid #f0c040; border-radius:4px; font-size:9px; color:#856404; text-align:center; }
+            /* Badge photo — thème Base */
+            .badgePhoto { border-color:#999; background:#fff; }
+            /* Menu clic droit — thème Base */
+            .custom-context-menu { background:#ffffff; border:1px solid #ccc; color:#222; }
+            .custom-context-menu .menu-item { color:#222; }
+            .custom-context-menu .menu-item:hover { background-color:#e8e8e8; }
+            .custom-context-menu hr { border-top:1px solid #ccc; }
+            .barcode-content { background:#ffffff; }
+            .barcode-close { background:#555; color:#fff; }
+            .barcode-close:hover { background:#333; }
+            /* Stow Palette — thème Base */
+            #palette-panel .pp-title { color:#555; }
+            #palette-panel .pp-copy-btn { color:#0066c0; background:#eaf3fb; border-color:#b5d4f4; }
+            #palette-panel .pp-copy-btn:hover { background:#d0e8f8; }
+            #palette-panel .pp-alert { background:#FAEEDA; border-color:#EF9F27; color:#633806; }
+            /* Free Print panel — thème Base */
+            .barcodes_cover { background-color:#f3f3f3cc; }
+            .barcodes_panel { background-color:#fff; border:1px solid #aaa; color:#444; }
+            .barcodes_panel > p { color:#444; }
+            /* Bin Check selects — thème Base */
+            #disposition-filter, #consumer-filter, #container-filter, #bin-check-comment { background:#ffffff; color:#222; border-color:#ccc; }
             `;
         } else {
             const panelBg = t.isGradient ? t.gradPanel : t.bg2;
             const headerBg = t.isGradient ? t.gradHeader : t.bg3;
             const accentCss = t.isGradient ? t.gradAccent : t.accent;
+            // Pour les thèmes animés, on NE met pas background-color sur body (géré par animCSS)
+            const bodyBgRule = t.isAnimated
+                ? `body, .a-cal-labels, .a-popover-inner, #side-bar { color: #d1d5db; }`
+                : `body, .a-cal-labels, .a-popover-inner, #side-bar { background-color: ${t.bg1}; color: #d1d5db; }`;
             styleEl.textContent = `
-        body, .a-cal-labels, .a-popover-inner, #side-bar { background-color: ${t.bg1}; color: #d1d5db; }
+        ${bodyBgRule}
         table.a-bordered tr:nth-child(2n+1) { background-color: ${t.bg2}; }
         table.a-bordered tr:nth-child(2n)   { background-color: ${t.bg1}; }
         table.a-bordered tr.odd td          { background-color: ${t.bg2} !important; }
@@ -444,6 +706,11 @@
         #fcr-theme-btn-magma  { background:${THEMES.magma.gradBtn}; color:#fff0e8; border-color:${THEMES.magma.accent}; text-shadow:0 1px 2px rgba(0,0,0,0.4); }
         #fcr-theme-btn-nebula { background:${THEMES.nebula.gradBtn}; color:#f6ecff; border-color:${THEMES.nebula.accent}; text-shadow:0 1px 2px rgba(0,0,0,0.4); }
         #fcr-theme-btn-glacier { background:${THEMES.glacier.gradBtn}; color:#e0faff; border-color:${THEMES.glacier.accent}; text-shadow:0 1px 4px rgba(0,200,255,0.5); box-shadow:0 0 8px rgba(0,229,255,0.3); }
+        #fcr-theme-btn-wave   { background:${THEMES.wave.gradBtn}; color:#e0f7ff; border-color:${THEMES.wave.accent}; }
+        #fcr-theme-btn-pulse  { background:${THEMES.pulse.gradBtn}; color:#fce4ff; border-color:${THEMES.pulse.accent}; animation:fcr-pulse-glow 4s ease-in-out infinite; }
+        #fcr-theme-btn-stars  { background:${THEMES.stars.gradBtn}; color:#fff8d6; border-color:${THEMES.stars.accent}; }
+        #fcr-theme-btn-ember  { background:${THEMES.ember.gradBtn}; color:#fff0e0; border-color:${THEMES.ember.accent}; }
+        #fcr-theme-btn-matrix { background:${THEMES.matrix.gradBtn}; color:#ccffdd; border-color:${THEMES.matrix.accent}; }
         /* Module panel theming — suit désormais le thème actif */
         #fcr-module-panel { border-bottom:2px solid ${t.accentDark}; background:${panelBg}; overflow:hidden; }
         #fcr-module-header { display:flex; align-items:center; justify-content:space-between; padding:7px 10px; cursor:pointer; border-bottom:1px solid ${t.accentDark}; user-select:none; transition:background 0.2s; }
@@ -458,6 +725,27 @@
         #fcr-module-panel .fcr-module-toggle .fcr-module-knob { position:absolute; width:11px; height:11px; background:white; border-radius:50%; top:2px; left:2px; transition:left 0.2s, right 0.2s; }
         #fcr-module-panel .fcr-module-toggle.on .fcr-module-knob { left:auto; right:2px; }
         #fcr-reload-notice { margin:5px 4px 2px 4px; padding:4px 6px; background:#3a2a00; border:1px solid #f0c040; border-radius:4px; font-size:9px; color:#f0c040; text-align:center; }
+        /* Badge photo — suit le thème */
+        .badgePhoto { border-color:${t.accent}; background:${t.bg2}; }
+        /* Menu clic droit — suit le thème */
+        .custom-context-menu { background:${t.bg2}; border:1px solid ${t.accentDark}; color:#d1d5db; }
+        .custom-context-menu .menu-item { color:#d1d5db; }
+        .custom-context-menu .menu-item:hover { background-color:${t.bg3}; color:${t.accent}; }
+        .custom-context-menu hr { border-top:1px solid ${t.accentDark}; }
+        .barcode-content { background:${t.bg2}; border:1px solid ${t.accentDark}; }
+        .barcode-close { background:${t.isGradient ? t.gradBtn : t.bg3}; color:${t.accent}; border:1px solid ${t.accentDark}; }
+        .barcode-close:hover { background:${t.accent}; color:${t.bg1}; }
+        /* Stow Palette — suit le thème */
+        #palette-panel .pp-title { color:${t.accent}; }
+        #palette-panel .pp-copy-btn { color:${t.accent}; background:${t.bg3}; border-color:${t.accentDark}; }
+        #palette-panel .pp-copy-btn:hover { background:${t.isGradient ? t.gradBtn : t.accent}; color:${t.bg1}; }
+        #palette-panel .pp-alert { background:${t.bg3}; border-color:${t.accent}; color:#d1d5db; }
+        /* Free Print panel — suit le thème */
+        .barcodes_cover { background-color:${t.bg1}cc; }
+        .barcodes_panel { background-color:${t.bg2}; border:1px solid ${t.accentDark}; color:#d1d5db; }
+        .barcodes_panel > p { color:#d1d5db; }
+        /* Bin Check selects — suit le thème */
+        #disposition-filter, #consumer-filter, #container-filter, #bin-check-comment { background:${t.bg2}; color:#d1d5db; border-color:${t.accentDark}; }
         /* Hazmat panel theming */
         #hazmat-fcr-panel { border:1px solid ${t.accentDark}; border-radius:8px; margin:10px 0; overflow:hidden; background:${panelBg}; }
         #hazmat-fcr-header { background:${headerBg}; padding:8px 12px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; }
@@ -468,12 +756,17 @@
         .hazmat-fcr-info { flex:1; }
         .hazmat-fcr-message { font-size:11px; margin-top:6px; opacity:0.85; border-left:3px solid; padding-left:8px; }
         .hazmat-fcr-meta { display:flex; gap:12px; margin-top:4px; font-size:11px; opacity:0.7; }
+        ${t.isAnimated && t.animCSS ? t.animCSS : ''}
         `;
         }
 
         document.querySelectorAll('.fcr-theme-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.theme === themeName);
         });
+
+        // Nettoie l'ancien élément séparé d'animation s'il existe (legacy)
+        const oldAnimEl = document.getElementById('fcr-anim-style');
+        if (oldAnimEl) oldAnimEl.remove();
 
         document.querySelectorAll('.prep-instructions-row').forEach(row => {
             const th = row.querySelector('th');
@@ -535,11 +828,17 @@
         setTimeout(() => injectModulePanel(), 200);
     }, 1500);
 
+    // Observer ciblé sur le sidebar uniquement (pas document.body+subtree)
+    // Se déconnecte automatiquement une fois les deux panneaux injectés
+    const sidebarRoot = document.querySelector('#side-bar') || document.querySelector('.sidebar') || document.querySelector('[id*="side"]') || document.body;
     const sidebarObserver = new MutationObserver(() => {
-        if (!document.getElementById('fcr-theme-panel')) injectThemePanel();
-        if (!document.getElementById('fcr-module-panel')) injectModulePanel();
+        const themeOk  = !!document.getElementById('fcr-theme-panel');
+        const moduleOk = !!document.getElementById('fcr-module-panel');
+        if (!themeOk)  injectThemePanel();
+        if (!moduleOk) injectModulePanel();
+        if (themeOk && moduleOk) sidebarObserver.disconnect();
     });
-    sidebarObserver.observe(document.body, { childList: true, subtree: true });
+    sidebarObserver.observe(sidebarRoot, { childList: true });
 
     // ════════════════════════════════════════════════════════════════
     // ===== COULEURS ATTRIBUTS PRODUIT =====
@@ -571,6 +870,13 @@
             imageContainer.style.cssText = `display:none;position:fixed;z-index:1000;background-color:white;padding:5px;border:1px solid #ccc;border-radius:5px;box-shadow:0 2px 10px rgba(0,0,0,0.2);max-width:350px;max-height:350px;`;
             document.body.appendChild(imageContainer);
 
+            function getContainerColors() {
+                const th = THEMES[currentTheme] || THEMES.bleu;
+                return th.isBase
+                    ? { bg: '#ffffff', border: '#ccc' }
+                    : { bg: th.bg2, border: th.accentDark };
+            }
+
             function positionContainer(element) {
                 const rect = element.getBoundingClientRect();
                 const containerRect = imageContainer.getBoundingClientRect();
@@ -587,7 +893,8 @@
             function handleMouseEnter(event, asin) {
                 const element = event.target;
                 const rect = element.getBoundingClientRect();
-                imageContainer.style.cssText = `display:block;position:fixed;top:${rect.top}px;left:${rect.right + 10}px;z-index:1000;background-color:white;padding:5px;border:1px solid #ccc;border-radius:5px;box-shadow:0 2px 10px rgba(0,0,0,0.2);max-width:350px;max-height:350px;`;
+                const { bg, border } = getContainerColors();
+                imageContainer.style.cssText = `display:block;position:fixed;top:${rect.top}px;left:${rect.right + 10}px;z-index:1000;background-color:${bg};padding:5px;border:1px solid ${border};border-radius:5px;box-shadow:0 2px 10px rgba(0,0,0,0.2);max-width:350px;max-height:350px;`;
                 imageContainer.innerHTML = 'Loading...';
                 setTimeout(() => positionContainer(element), 10);
                 const warehouseId = document.cookie.split('; ').find(row => row.startsWith('fcmenu-warehouseId='))?.split('=')[1];
@@ -663,7 +970,7 @@
         }
 
         GM_addStyle(`
-            .badgePhoto { display:none;position:fixed;top:100px;left:100px;background-color:#f37d15;border:1px solid #ccc;padding:2px;z-index:10; }
+            .badgePhoto { display:none;position:fixed;top:100px;left:100px;border:2px solid currentColor;padding:2px;z-index:10;border-radius:4px;background:#1a1a1a; }
             .badgePhoto img { width:80px;height:auto; }
             td:hover .badgePhoto { display:block; }
         `);
@@ -857,18 +1164,42 @@
         return button;
     }
 
+    // Pool de concurrence : exécute les tâches par lots de `limit` max en parallèle.
+    // Évite de saturer le serveur avec 50 requêtes simultanées sur un gros PO.
+    async function runWithConcurrency(tasks, limit = 5) {
+        const results = [];
+        let index = 0;
+        async function worker() {
+            while (index < tasks.length) {
+                const current = index++;
+                try {
+                    results[current] = await tasks[current]();
+                } catch (e) {
+                    results[current] = { error: e };
+                }
+            }
+        }
+        const workers = Array.from({ length: Math.min(limit, tasks.length) }, worker);
+        await Promise.all(workers);
+        return results;
+    }
+
     async function processPurchaseOrderItems(rows, button, countDiv, isResearchPrep = false) {
         button.disabled = true;
         button.textContent = 'Loading...';
-        if (isResearchPrep) {
-            const isd = findISD();
-            if (!isd) { alert('ERROR: Shipment ID not found!'); button.disabled = false; button.textContent = 'Research Prep'; return; }
+        const isd = isResearchPrep ? findISD() : null;
+        if (isResearchPrep && !isd) {
+            alert('ERROR: Shipment ID not found!');
+            button.disabled = false;
+            button.textContent = 'Research Prep';
+            return;
         }
         document.querySelectorAll('.prep-instructions-row').forEach(row => row.remove());
         let prepCount = 0, noPrepCount = 0, unknownCount = 0;
-        const isd = isResearchPrep ? findISD() : null;
-        const promises = [];
-        for (const row of rows) {
+
+        // Construit la liste de tâches (une par ligne ASIN)
+        const rowList = Array.from(rows);
+        const tasks = rowList.map(row => async () => {
             let asin;
             const asinCell = row.children[1];
             const imgElement = asinCell.querySelector('img');
@@ -876,33 +1207,40 @@
             if (imgElement) asin = imgElement.getAttribute('data-asin');
             else if (linkElement) asin = linkElement.textContent;
             else asin = asinCell.textContent.trim();
-            const promise = (isResearchPrep ? fetchResearchPrepInstructions(isd, asin) : fetchAsinLevelPrepInstructions(asin))
-                .then((result) => {
-                    const prepRow = document.createElement('tr');
-                    prepRow.className = 'prep-instructions-row';
-                    const prepCell = document.createElement('td');
-                    prepCell.colSpan = row.children.length;
-                    prepCell.style.padding = '5px';
-                    prepCell.style.borderTop = '1px solid #ddd';
-                    let instructions, isPrep;
-                    if (isResearchPrep) {
-                        ({ instructions, isPrep } = result);
-                        instructions = Array.isArray(instructions) ? instructions.join(', ') : instructions;
-                    } else { instructions = result; isPrep = instructions !== 'No Prep'; }
-                    if (isPrep === 'unknown') { prepCell.style.backgroundColor = '#FFFF00'; prepCell.style.color = 'black'; unknownCount++; }
-                    else if (isPrep) { prepCell.style.color = 'pink'; prepCell.style.backgroundColor = 'black'; prepCount++; }
-                    else { noPrepCount++; }
-                    prepCell.innerHTML = `<b>^^Prep:</b> ${instructions}`;
-                    prepRow.appendChild(prepCell);
-                    row.parentNode.insertBefore(prepRow, row.nextSibling);
-                }).catch(error => console.error(`Error for ASIN ${asin}:`, error));
-            promises.push(promise);
-        }
-        Promise.all(promises).then(() => {
-            countDiv.textContent = `Prep: ${prepCount} | No Prep: ${noPrepCount} | Unknown: ${unknownCount}`;
-            button.textContent = isResearchPrep ? 'Research Prep' : 'ASIN Level Prep';
-            button.disabled = false;
+
+            try {
+                const result = isResearchPrep
+                    ? await fetchResearchPrepInstructions(isd, asin)
+                    : await fetchAsinLevelPrepInstructions(asin);
+
+                const prepRow = document.createElement('tr');
+                prepRow.className = 'prep-instructions-row';
+                const prepCell = document.createElement('td');
+                prepCell.colSpan = row.children.length;
+                prepCell.style.padding = '5px';
+                prepCell.style.borderTop = '1px solid #ddd';
+                let instructions, isPrep;
+                if (isResearchPrep) {
+                    ({ instructions, isPrep } = result);
+                    instructions = Array.isArray(instructions) ? instructions.join(', ') : instructions;
+                } else { instructions = result; isPrep = instructions !== 'No Prep'; }
+                if (isPrep === 'unknown') { prepCell.style.backgroundColor = '#FFFF00'; prepCell.style.color = 'black'; unknownCount++; }
+                else if (isPrep) { prepCell.style.color = 'pink'; prepCell.style.backgroundColor = 'black'; prepCount++; }
+                else { noPrepCount++; }
+                prepCell.innerHTML = `<b>^^Prep:</b> ${instructions}`;
+                prepRow.appendChild(prepCell);
+                row.parentNode.insertBefore(prepRow, row.nextSibling);
+            } catch (error) {
+                console.error(`Error for ASIN ${asin}:`, error);
+            }
         });
+
+        // Exécute max 5 requêtes en parallèle
+        await runWithConcurrency(tasks, 5);
+
+        countDiv.textContent = `Prep: ${prepCount} | No Prep: ${noPrepCount} | Unknown: ${unknownCount}`;
+        button.textContent = isResearchPrep ? 'Research Prep' : 'ASIN Level Prep';
+        button.disabled = false;
     }
 
     function addPrepButtons() {
@@ -1059,7 +1397,19 @@
                 onload: function(response) {
                     const parser = new DOMParser();
                     const doc = parser.parseFromString(response.responseText, 'text/html');
-                    const weightText = doc.querySelector('tr:nth-child(6) td')?.textContent || '';
+                    // Recherche par label textuel plutôt que par position nth-child (fragile)
+                    let weightText = '';
+                    doc.querySelectorAll('tr').forEach(row => {
+                        const th = row.querySelector('th, td:first-child');
+                        if (th && /^weight$/i.test(th.textContent.trim())) {
+                            const td = row.querySelector('td:last-child') || row.querySelector('td:nth-child(2)');
+                            if (td) weightText = td.textContent.trim();
+                        }
+                    });
+                    // Fallback : ancienne méthode si le label n'est pas trouvé
+                    if (!weightText) {
+                        weightText = doc.querySelector('tr:nth-child(6) td')?.textContent || '';
+                    }
                     const weight = parseFloat(weightText.split(' ')[0]) || 0;
                     const lowerText = weightText.toLowerCase();
                     const unit = (lowerText.includes('kg') || lowerText.includes('kilogram')) ? 'kg' : 'lbs';
@@ -1154,13 +1504,16 @@
 
     function downloadCSV(csvContent, filename) {
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url  = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.setAttribute('href', URL.createObjectURL(blob));
+        link.setAttribute('href', url);
         link.setAttribute('download', filename);
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        // Libère la mémoire allouée par createObjectURL
+        URL.revokeObjectURL(url);
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -1268,15 +1621,15 @@
                 return true;
             });
 
+            // Le style couleur du menu clic droit est géré dans applyTheme() pour suivre le thème.
+            // Seules les règles structurelles fixes sont injectées ici.
             GM_addStyle(`
-                .custom-context-menu { background:#183D3D;border:1px solid #040D12;border-radius:4px;box-shadow:0 2px 5px rgba(0,0,0,0.3);padding:8px 0;min-width:150px;max-width:250px; }
-                .custom-context-menu .menu-item { color:#E0E0E0;cursor:pointer;padding:8px 16px;font-size:14px;transition:background-color 0.2s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
-                .custom-context-menu .menu-item:hover { background-color:#2C5D5D; }
-                .custom-context-menu hr { border:none;border-top:1px solid #040D12;margin:4px 0; }
+                .custom-context-menu { border-radius:4px;box-shadow:0 2px 5px rgba(0,0,0,0.3);padding:8px 0;min-width:150px;max-width:250px; }
+                .custom-context-menu .menu-item { cursor:pointer;padding:8px 16px;font-size:14px;transition:background-color 0.2s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+                .custom-context-menu hr { border:none;margin:4px 0; }
                 .barcode-modal { position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:10000; }
-                .barcode-content { background:white;padding:20px;border-radius:5px;text-align:center; }
-                .barcode-close { margin-top:10px;padding:5px 15px;background:#183D3D;color:#E0E0E0;border:none;border-radius:3px;cursor:pointer; }
-                .barcode-close:hover { background:#2C5D5D; }
+                .barcode-content { padding:20px;border-radius:5px;text-align:center; }
+                .barcode-close { margin-top:10px;padding:5px 15px;border:none;border-radius:3px;cursor:pointer; }
             `);
         }
         copyMenu();
@@ -1413,11 +1766,21 @@
                 }
                 const grid = document.createElement('div');
                 grid.className = 'pp-grid';
+                // Adapter les couleurs des cartes selon le thème actif
+                const th = THEMES[currentTheme] || THEMES.bleu;
+                const isDark = !th.isBase;
                 CARDS.forEach(({ label, emoji, key }) => {
                     const val = results[key], isYes = val === true, isNo = val === false;
-                    const bg = isYes ? '#EAF3DE' : isNo ? '#FCEBEB' : '#f5f5f5';
-                    const border = isYes ? '#97C459' : isNo ? '#F09595' : '#ddd';
-                    const color = isYes ? '#27500A' : isNo ? '#791F1F' : '#888';
+                    let bg, border, color;
+                    if (isDark) {
+                        bg     = isYes ? th.bg3       : isNo ? '#3a0a0a'  : th.bg2;
+                        border = isYes ? th.accent     : isNo ? '#c04040'  : th.accentDark;
+                        color  = isYes ? th.accent     : isNo ? '#f08080'  : '#888';
+                    } else {
+                        bg     = isYes ? '#EAF3DE'    : isNo ? '#FCEBEB'   : '#f5f5f5';
+                        border = isYes ? '#97C459'    : isNo ? '#F09595'   : '#ddd';
+                        color  = isYes ? '#27500A'    : isNo ? '#791F1F'   : '#888';
+                    }
                     const icon = isYes ? '✔' : isNo ? '✘' : '—';
                     const txt = isYes ? 'Oui' : isNo ? 'Non' : 'N/A';
                     const card = document.createElement('div');
@@ -1986,22 +2349,22 @@
 
                 const dispSelect = document.createElement('select');
                 dispSelect.id = 'disposition-filter';
-                dispSelect.style.cssText = 'padding:6px;margin-right:5px;border-radius:4px;font-size:12px;border:1px solid #fff;box-shadow:inset 0 2px 4px rgba(0,0,0,0.2);background:#ffffff;';
+                dispSelect.style.cssText = 'padding:6px;margin-right:5px;border-radius:4px;font-size:12px;border:1px solid;box-shadow:inset 0 2px 4px rgba(0,0,0,0.2);';
                 dispSelect.innerHTML = `<option value="ALL" selected>All Dispositions</option><option value="SELLABLE">SELLABLE</option><option value="DAMAGED">DAMAGED (All)</option>`;
 
                 const consumerSelect = document.createElement('select');
                 consumerSelect.id = 'consumer-filter';
-                consumerSelect.style.cssText = 'padding:6px;margin-right:5px;border-radius:4px;font-size:12px;border:1px solid #fff;box-shadow:inset 0 2px 4px rgba(0,0,0,0.2);background:#ffffff;';
+                consumerSelect.style.cssText = 'padding:6px;margin-right:5px;border-radius:4px;font-size:12px;border:1px solid;box-shadow:inset 0 2px 4px rgba(0,0,0,0.2);';
                 consumerSelect.innerHTML = `<option value="ALL" selected>All Consumers</option><option value="UNOWNED">UNOWNED</option><option value="PENDING_RESEARCH">PENDING_RESEARCH</option><option value="CUSTOMER_SHIPMENT">CUSTOMER_SHIPMENT</option>`;
 
                 const containerSelect = document.createElement('select');
                 containerSelect.id = 'container-filter';
-                containerSelect.style.cssText = 'padding:6px;margin-right:5px;border-radius:4px;font-size:12px;border:1px solid #fff;box-shadow:inset 0 2px 4px rgba(0,0,0,0.2);background:#ffffff;';
+                containerSelect.style.cssText = 'padding:6px;margin-right:5px;border-radius:4px;font-size:12px;border:1px solid;box-shadow:inset 0 2px 4px rgba(0,0,0,0.2);';
                 containerSelect.innerHTML = `<option value="ALL">All Containers</option><option value="PRIME" selected>PRIME Bins</option><option value="TSX">TSX</option><option value="CSX">CSX</option><option value="OTHER">Other</option>`;
 
                 const commentInput = document.createElement('input');
                 commentInput.id = 'bin-check-comment'; commentInput.type = 'text'; commentInput.placeholder = 'Add comment...';
-                commentInput.style.cssText = 'padding:6px;margin-right:7px;border-radius:4px;font-size:12px;width:150px;border:1px solid #fff;box-shadow:inset 0 2px 4px rgba(0,0,0,0.2);';
+                commentInput.style.cssText = 'padding:6px;margin-right:7px;border-radius:4px;font-size:12px;width:150px;border:1px solid;box-shadow:inset 0 2px 4px rgba(0,0,0,0.2);';
 
                 const podWrapper = document.createElement('span');
                 podWrapper.style.cssText = 'display:inline-block;margin-right:7px;white-space:nowrap;vertical-align:middle;';
@@ -2412,31 +2775,52 @@ function filterBins(){const checkboxes=document.querySelectorAll('.bin-checkbox:
             if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initHazmat);
             else setTimeout(initHazmat, 2500);
 
-            const hazmatObserver = new MutationObserver(function() {
-                const asin = getASINFromPage();
-                if (asin && asin !== lastHazmatASIN) {
-                    lastHazmatASIN = asin;
-                    if (!document.getElementById('hazmat-fcr-panel')) {
-                        const fc = getFCFromPage();
-                        setTimeout(() => fetchHazmatLevel(asin, fc), 1500);
+            let hazmatDebounceTimer = null;
+            const hazmatObserver = new MutationObserver(function(mutations) {
+                // Ignorer les mutations provenant du panel hazmat lui-même (anti-boucle)
+                const selfMutation = mutations.every(m =>
+                    m.target === document.getElementById('hazmat-fcr-panel') ||
+                    (m.target && m.target.closest && m.target.closest('#hazmat-fcr-panel'))
+                );
+                if (selfMutation) return;
+
+                clearTimeout(hazmatDebounceTimer);
+                hazmatDebounceTimer = setTimeout(() => {
+                    const asin = getASINFromPage();
+                    if (asin && asin !== lastHazmatASIN) {
+                        lastHazmatASIN = asin;
+                        if (!document.getElementById('hazmat-fcr-panel')) {
+                            const fc = getFCFromPage();
+                            fetchHazmatLevel(asin, fc);
+                        }
                     }
-                }
+                }, 600);
             });
-            hazmatObserver.observe(document.body, { childList: true, subtree: true });
+            const hazmatRoot = document.querySelector('main') || document.querySelector('[role="main"]') || document.querySelector('#content') || document.body;
+            hazmatObserver.observe(hazmatRoot, { childList: true, subtree: true });
         })();
     }
 
     // ════════════════════════════════════════════════════════════════
     // ===== OBSERVERS POUR LES BOUTONS INVENTORY =====
     // ════════════════════════════════════════════════════════════════
+    // Observer ciblé sur le contenu principal, pas document.body entier.
+    // Debounce 500ms pour éviter les déclenchements en rafale.
+    const inventoryRoot = document.querySelector('main') || document.querySelector('[role="main"]') || document.querySelector('#content') || document.body;
     const inventoryObserver = new MutationObserver(debounce(() => {
-        if (document.querySelector('[data-section-type="inventory"]')) {
-            addWeightButton();
-            addCsvExportButton();
+        const hasInventory = !!document.querySelector('[data-section-type="inventory"]');
+        const hasHistory   = !!document.querySelector('#table-inventory-history');
+        const hasCsvBtn    = !!document.getElementById('csvExportButton');
+        const hasWeightBtn = !!document.getElementById('weightButton');
+        const hasHistoryBtn = !!document.getElementById('csvHistoryButton');
+
+        if (hasInventory) {
+            if (!hasWeightBtn)  addWeightButton();
+            if (!hasCsvBtn)     addCsvExportButton();
         }
-        if (document.querySelector('#table-inventory-history')) addCsvHistoryButton();
+        if (hasHistory && !hasHistoryBtn) addCsvHistoryButton();
     }, 500));
-    inventoryObserver.observe(document.body, { childList: true, subtree: true });
+    inventoryObserver.observe(inventoryRoot, { childList: true, subtree: true });
 
     setTimeout(() => {
         if (document.querySelector('[data-section-type="inventory"]')) { addWeightButton(); addCsvExportButton(); }
