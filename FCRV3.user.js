@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         FCR Lite Ultra V2
+// @name         FCR ULTRA FINAL TEST
 // @version      2.5.0
 // @description  FCR Lite + Stow Palette + God Mode + Bin Check + Hazmat + Void Theme — All-in-one + Module Toggle Panel
 // @author       @jeanbayd
@@ -838,6 +838,17 @@ table.a-bordered tr:first-child th {
 
         const hazmatPanel = document.getElementById('hazmat-fcr-panel');
         if (hazmatPanel) injectHazmatPanel_restyle(t);
+
+        // Restyle du panneau étiquettes si présent
+        const etiqPanel = document.getElementById('etiq2-panel');
+        if (etiqPanel) etiq2_restyle(t);
+
+        // Restyle du bouton Bin Check List
+        const binBtn = document.getElementById('bin-check-button');
+        if (binBtn && !binBtn.dataset.incomplete) {
+            const binColor = t.isBase ? '#ff9900' : t.accent;
+            binBtn.style.cssText = `background:${binColor} !important;color:white !important;border:2px solid ${binColor} !important;padding:6px 12px !important;border-radius:4px !important;cursor:pointer !important;font-weight:bold !important;font-size:12px !important;z-index:9999 !important;position:relative !important;display:inline-block !important;vertical-align:middle !important;`;
+        }
     }
 
     applyTheme(currentTheme);
@@ -2457,6 +2468,7 @@ table.a-bordered tr:first-child th {
                 const printButton = document.createElement('button');
                 printButton.id = 'bin-check-button';
                 printButton.innerHTML = '🖨️ Generate Bin Check List';
+                if (isIncomplete) printButton.dataset.incomplete = '1';
                 printButton.style.cssText = `background:${isIncomplete ? '#8A2BE2' : '#ff9900'} !important;color:white !important;border:none !important;padding:6px 12px !important;border-radius:4px !important;cursor:pointer !important;font-weight:bold !important;font-size:12px !important;z-index:9999 !important;position:relative !important;display:inline-block !important;vertical-align:middle !important;`;
                 printButton.onclick = generateBinCheckList;
 
@@ -2898,5 +2910,433 @@ function filterBins(){const checkboxes=document.querySelectorAll('.bin-checkbox:
         if (document.querySelector('[data-section-type="inventory"]')) { addWeightButton(); addCsvExportButton(); }
         if (document.querySelector('#table-inventory-history')) addCsvHistoryButton();
     }, 2500);
+
+    // ════════════════════════════════════════════════════════════════
+    // ===== MODULE ÉTIQUETTES (fusionné depuis Etiquette Print Standalone)
+    // Impression via window.print() — boîte de dialogue Windows
+    // Suit le thème FCR Lite Ultra via etiq2_restyle(t)
+    // ════════════════════════════════════════════════════════════════
+
+    const ETIQUETTES = {
+        'Damage': [
+            { action: 'Collecte Damage', label: 'ICQA Damage' },
+            { action: 'Collecte Damage', label: 'Defective Recall' },
+            { action: 'Collecte Damage', label: 'Damage InQuarantine' },
+            { action: 'Collecte Damage', label: 'Defective PS' },
+            { action: 'Collecte Damage', label: 'Suspicion Vol' },
+            { action: 'Collecte Damage', label: 'NS/Transparency issue' },
+        ],
+        'Prep': [
+            { action: 'Collecte Sweep', label: 'Prep Bubble' },
+            { action: 'Collecte Sweep', label: 'Prep stickering' },
+            { action: 'Collecte Sweep', label: 'Prep Bagging' },
+            { action: 'Collecte Sweep', label: 'Prep Boxing' },
+            { action: 'Collecte Sweep', label: 'Prep Cap_Sealing' },
+            { action: 'Collecte Sweep', label: 'Prep taping' },
+            { action: 'Collecte Sweep', label: 'Prep Opaque' },
+        ],
+        'TT': [
+            { action: 'Collecte Sweep', label: 'TT - No PO' },
+            { action: 'Collecte Sweep', label: 'TT - Not In PO' },
+            { action: 'Collecte Sweep', label: 'TT - Wrong Title' },
+            { action: 'Collecte Sweep', label: 'TT - Wrong Image' },
+            { action: 'Collecte Sweep', label: 'TT - Description Product' },
+            { action: 'Collecte Sweep', label: 'TT - No Barcode' },
+            { action: 'Collecte Sweep', label: 'TT - Multiple Scannable Barcode' },
+            { action: 'Collecte Sweep', label: 'TT - EAN Mislinked' },
+            { action: 'Collecte Sweep', label: 'TT - EAN not linked' },
+            { action: 'Collecte Sweep', label: 'TT - Expiration date' },
+        ],
+        'HAZMAT': [
+            { action: 'Collecte Sweep', label: 'TT - HAZMAT Level 6' },
+            { action: 'Collecte Sweep', label: 'TT - HAZMAT Level 0' },
+            { action: 'Collecte Sweep', label: 'Hazmat Level 5' },
+        ],
+        'Inbound': [
+            { action: 'Collecte STOW', label: 'CUBI' },
+            { action: 'Collecte STOW', label: 'Tote Sale' },
+            { action: 'Collecte STOW', label: 'Tote Cassée' },
+        ],
+        'Non Sort': [
+            { action: 'Collecte Sweep', label: 'Non Sort' },
+            { action: 'Collecte Sweep', label: 'Non Sort  XFRE' },
+            { action: 'Collecte Sweep', label: 'Non Sort  XFRJ' },
+            { action: 'Collecte Sweep', label: 'Non Sort  XOR4' },
+            { action: 'Collecte Sweep', label: 'Non Sort  XOS1' },
+        ],
+        'DA': [
+            { action: 'Collecte Sweep', label: 'DA à faire' },
+            { action: 'Collecte Sweep', label: 'Da en attente approval' },
+            { action: 'Collecte Sweep', label: 'DA :' },
+        ],
+    };
+
+    const ETIQ_CAT_ICONS = {
+        'Damage':   '💥',
+        'Prep':     '📦',
+        'TT':       '🔄',
+        'HAZMAT':   '☢️',
+        'Inbound':  '📥',
+        'Non Sort': '🚫',
+        'DA':       '📋',
+    };
+
+    function etiq2_getThemeVars(t) {
+        const isDark = t && !t.isBase;
+        return {
+            isDark,
+            panelBg:     isDark ? (t.isGradient ? t.gradPanel : t.bg2)  : '#fff',
+            headerBg:    isDark ? (t.isGradient ? t.gradHeader : t.bg3) : '#f5f5f5',
+            accentColor: isDark ? t.accent : '#ff9900',
+            textColor:   isDark ? '#d1d5db' : '#333',
+            borderColor: isDark ? t.accentDark : '#ddd',
+            inputBg:     isDark ? t.bg1 : '#fff',
+        };
+    }
+
+    // Restyle appelé par applyTheme() à chaque changement de thème
+    function etiq2_restyle(t) {
+        const v = etiq2_getThemeVars(t);
+        const panel = document.getElementById('etiq2-panel');
+        const fab   = document.getElementById('etiq2-fab');
+        if (!panel || !fab) return;
+
+        panel.style.background   = v.panelBg;
+        panel.style.borderColor  = v.borderColor;
+
+        const header = panel.querySelector('#etiq2-header');
+        if (header) {
+            header.style.background   = v.headerBg;
+            header.style.borderColor  = v.borderColor;
+        }
+        const headerLabel = panel.querySelector('#etiq2-header-label');
+        if (headerLabel) headerLabel.style.color = v.accentColor;
+        const closeBtn = panel.querySelector('#etiq2-close');
+        if (closeBtn) closeBtn.style.color = v.accentColor;
+
+        fab.style.background  = v.isDark ? (t.isGradient ? t.gradBtn : t.bg3) : '#ff9900';
+        fab.style.borderColor = v.accentColor;
+        fab.style.color       = v.accentColor;
+
+        panel.querySelectorAll('label').forEach(el => el.style.color = v.textColor);
+        panel.querySelectorAll('input, select').forEach(el => {
+            el.style.background   = v.inputBg;
+            el.style.color        = v.textColor;
+            el.style.borderColor  = v.borderColor;
+        });
+
+        const printBtn = document.getElementById('etiq2-print-btn');
+        if (printBtn) {
+            printBtn.style.background  = v.accentColor;
+            printBtn.style.borderColor = v.accentColor;
+        }
+
+        const sigPreview = document.getElementById('etiq2-sig-preview');
+        if (sigPreview) {
+            sigPreview.style.background  = v.isDark ? t.bg1 : '#f8f8f8';
+            sigPreview.style.borderColor = v.borderColor;
+            sigPreview.style.color       = v.isDark ? '#aaa' : '#888';
+        }
+    }
+
+    function etiq2_escapeHTML(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    function etiq2_getShift()   { return GM_getValue('etiShift', ''); }
+    function etiq2_getDateStr() { const d = new Date(); return `${d.getDate()}/${d.getMonth()+1}`; }
+    function etiq2_getLogin()   { return getCookie('fcmenu-employeeLogin') || ''; }
+
+    function etiq2_buildSignature() {
+        const parts = [];
+        const login = etiq2_getLogin();
+        const shift = etiq2_getShift();
+        if (login) parts.push('@' + login);
+        if (shift) parts.push(shift);
+        parts.push(etiq2_getDateStr());
+        return parts.join(' ');
+    }
+
+    function etiq2_print(etiquette, quantity) {
+        const sig    = etiq2_buildSignature();
+        const action = etiq2_escapeHTML(etiquette.action.trim());
+        const label  = etiq2_escapeHTML(etiquette.label.trim());
+        const sigEsc = etiq2_escapeHTML(sig);
+        const qty    = Math.max(1, parseInt(quantity) || 1);
+
+        let pages = '';
+        for (let i = 0; i < qty; i++) {
+            pages += `
+            <div class="etq-page">
+                <div class="etq-block">
+                    <div class="etq-cell">
+                        <div class="etq-action">${action}</div>
+                        <div class="etq-title">${label}</div>
+                        <div class="etq-sig">${sigEsc}</div>
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        const printHTML = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Étiquette</title>
+<style>
+    @page { size: 104mm 76.2mm; margin: 0; }
+    html, body { margin:0 !important; padding:0 !important; font-family:Arial,sans-serif; width:104mm; }
+    .etq-page { width:104mm; height:76.2mm; page-break-after:always; margin:0; padding:0; overflow:hidden; position:relative; }
+    .etq-page:last-child { page-break-after:auto; }
+    .etq-block { width:104mm; height:76.2mm; margin:0; padding:0; }
+    .etq-cell {
+        position:absolute;
+        top:-10mm; left:40mm; right:-10mm; bottom:3mm;
+        box-sizing:border-box; border:2px solid #000; background:#fff;
+        display:flex; flex-direction:column; align-items:center; justify-content:center;
+        text-align:center; padding:4mm 5mm; gap:2.5mm;
+    }
+    .etq-action { font-size:11pt; font-weight:bold; color:#000; line-height:1.1; }
+    .etq-title  { font-size:30pt; font-weight:bold; color:#000; line-height:1.05; word-wrap:break-word; }
+    .etq-sig    { font-size:15pt; font-weight:bold; color:#000; line-height:1.1; }
+</style>
+</head><body>
+${pages}
+<script><\/script>
+</body></html>`;
+
+        try {
+            const iframe = document.createElement('iframe');
+            iframe.style.cssText = 'position:fixed;width:0;height:0;border:0;visibility:hidden;';
+            document.body.appendChild(iframe);
+            const doc = iframe.contentWindow.document;
+            doc.open(); doc.write(printHTML); doc.close();
+            iframe.onload = function() {
+                try {
+                    iframe.contentWindow.focus();
+                    iframe.contentWindow.print();
+                } catch(e) {
+                    const w = window.open('', '_blank', 'width=500,height=400');
+                    if (w) { w.document.write(printHTML); w.document.close(); }
+                }
+                setTimeout(() => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); }, 90000);
+            };
+        } catch(e) {
+            const w = window.open('', '_blank', 'width=500,height=400');
+            if (w) { w.document.write(printHTML); w.document.close(); }
+        }
+    }
+
+    function etiq2_showFeedback(msg, color) {
+        const btn = document.getElementById('etiq2-print-btn');
+        if (!btn) return;
+        const orig = btn.textContent, origBg = btn.style.background;
+        btn.textContent = msg; btn.style.background = color;
+        setTimeout(() => { btn.textContent = orig; btn.style.background = origBg; }, 2000);
+    }
+
+    function etiq2_buildPanel() {
+        if (document.getElementById('etiq2-panel')) return;
+
+        const t = THEMES[currentTheme] || THEMES.bleu;
+        const v = etiq2_getThemeVars(t);
+
+        // ── FAB ──────────────────────────────────────────────────────
+        const fab = document.createElement('div');
+        fab.id = 'etiq2-fab';
+        fab.title = 'Étiquettes';
+        fab.innerHTML = '🏷️';
+        fab.style.cssText = `
+            position:fixed; bottom:24px; right:84px; z-index:99990;
+            width:48px; height:48px; border-radius:50%;
+            background:${v.isDark ? (t.isGradient ? t.gradBtn : t.bg3) : '#ff9900'};
+            color:${v.accentColor}; font-size:22px;
+            display:flex; align-items:center; justify-content:center;
+            cursor:pointer; box-shadow:0 4px 16px rgba(0,0,0,0.35);
+            border:2px solid ${v.accentColor};
+            transition:transform 0.2s, box-shadow 0.2s;
+            user-select:none;
+        `;
+        fab.addEventListener('mouseenter', () => { fab.style.transform='scale(1.12)'; });
+        fab.addEventListener('mouseleave', () => { fab.style.transform='scale(1)'; });
+        fab.addEventListener('click', etiq2_toggle);
+        document.body.appendChild(fab);
+
+        // ── Panneau ──────────────────────────────────────────────────
+        const panel = document.createElement('div');
+        panel.id = 'etiq2-panel';
+        panel.style.cssText = `
+            position:fixed; bottom:82px; right:84px; z-index:99989;
+            width:310px; border-radius:12px;
+            background:${v.panelBg}; border:1px solid ${v.borderColor};
+            box-shadow:0 8px 32px rgba(0,0,0,0.4);
+            font-family:Arial,sans-serif; font-size:13px;
+            display:none; overflow:hidden;
+        `;
+
+        // Header
+        const header = document.createElement('div');
+        header.id = 'etiq2-header';
+        header.style.cssText = `
+            background:${v.headerBg}; padding:10px 14px;
+            display:flex; align-items:center; justify-content:space-between;
+            border-bottom:1px solid ${v.borderColor};
+        `;
+        header.innerHTML = `
+            <span id="etiq2-header-label" style="font-size:11px;font-weight:700;color:${v.accentColor};text-transform:uppercase;letter-spacing:0.5px;">🏷️ IMPRIMER ÉTIQUETTE</span>
+            <span id="etiq2-close" style="cursor:pointer;color:${v.accentColor};font-size:16px;font-weight:700;line-height:1;" title="Fermer">✕</span>
+        `;
+        header.querySelector('#etiq2-close').addEventListener('click', etiq2_toggle);
+        panel.appendChild(header);
+
+        const body = document.createElement('div');
+        body.style.cssText = 'padding:14px;display:flex;flex-direction:column;gap:10px;';
+
+        // Shift
+        const shiftRow = document.createElement('div');
+        shiftRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
+        shiftRow.innerHTML = `
+            <label style="font-size:11px;font-weight:600;color:${v.textColor};min-width:70px;">Mon Shift</label>
+            <input id="etiq2-shift-input" type="text" placeholder="ex: IC1, O1, O3…"
+                value="${etiq2_escapeHTML(etiq2_getShift())}"
+                style="flex:1;padding:5px 8px;border-radius:5px;border:1px solid ${v.borderColor};background:${v.inputBg};color:${v.textColor};font-size:12px;outline:none;" />
+        `;
+        body.appendChild(shiftRow);
+
+        // Signature preview
+        const sigPreview = document.createElement('div');
+        sigPreview.id = 'etiq2-sig-preview';
+        sigPreview.style.cssText = `
+            font-size:11px; color:${v.isDark ? '#aaa' : '#888'};
+            padding:4px 8px; background:${v.isDark ? t.bg1 : '#f8f8f8'};
+            border-radius:4px; border:1px solid ${v.borderColor};
+            font-family:monospace;
+        `;
+        sigPreview.textContent = etiq2_buildSignature() || '(login non détecté)';
+        body.appendChild(sigPreview);
+
+        shiftRow.querySelector('#etiq2-shift-input').addEventListener('input', function() {
+            GM_setValue('etiShift', this.value.trim().toUpperCase());
+            sigPreview.textContent = etiq2_buildSignature() || '(login non détecté)';
+        });
+
+        const sep = document.createElement('hr');
+        sep.style.cssText = `border:none;border-top:1px solid ${v.borderColor};margin:0;`;
+        body.appendChild(sep);
+
+        // Catégorie
+        const catRow = document.createElement('div');
+        catRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
+        catRow.innerHTML = `
+            <label style="font-size:11px;font-weight:600;color:${v.textColor};min-width:70px;">Catégorie</label>
+            <select id="etiq2-cat-select" style="flex:1;padding:5px 8px;border-radius:5px;border:1px solid ${v.borderColor};background:${v.inputBg};color:${v.textColor};font-size:12px;cursor:pointer;">
+                ${Object.keys(ETIQUETTES).map(cat => `<option value="${cat}">${ETIQ_CAT_ICONS[cat]||''} ${cat}</option>`).join('')}
+            </select>
+        `;
+        body.appendChild(catRow);
+
+        // Étiquette
+        const labelRow = document.createElement('div');
+        labelRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
+        labelRow.innerHTML = `
+            <label style="font-size:11px;font-weight:600;color:${v.textColor};min-width:70px;">Étiquette</label>
+            <select id="etiq2-label-select" style="flex:1;padding:5px 8px;border-radius:5px;border:1px solid ${v.borderColor};background:${v.inputBg};color:${v.textColor};font-size:12px;cursor:pointer;"></select>
+        `;
+        body.appendChild(labelRow);
+
+        // Aperçu
+        const preview = document.createElement('div');
+        preview.id = 'etiq2-label-preview';
+        preview.style.cssText = `
+            background:${v.isDark ? t.bg1 : '#fffbe6'};
+            border:1px solid ${v.isDark ? v.borderColor : '#f0c040'};
+            border-radius:6px; padding:10px 12px; font-size:11px; line-height:1.8;
+            color:${v.textColor}; font-family:monospace; white-space:pre-line;
+        `;
+        body.appendChild(preview);
+
+        // Quantité + bouton
+        const bottomRow = document.createElement('div');
+        bottomRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
+        bottomRow.innerHTML = `
+            <label style="font-size:11px;font-weight:600;color:${v.textColor};min-width:70px;">Quantité</label>
+            <input id="etiq2-qty" type="number" min="1" max="99" value="1"
+                style="width:55px;padding:5px 8px;border-radius:5px;border:1px solid ${v.borderColor};background:${v.inputBg};color:${v.textColor};font-size:12px;text-align:center;" />
+            <button id="etiq2-print-btn" style="
+                flex:1;padding:7px 10px;border-radius:6px;
+                border:1px solid ${v.accentColor};background:${v.accentColor};
+                color:#fff;font-weight:700;font-size:12px;
+                cursor:pointer;transition:0.2s;letter-spacing:0.3px;
+            ">🖨️ Imprimer</button>
+        `;
+        body.appendChild(bottomRow);
+        panel.appendChild(body);
+        document.body.appendChild(panel);
+
+        // ── Logique ──────────────────────────────────────────────────
+        const catSelect   = document.getElementById('etiq2-cat-select');
+        const labelSelect = document.getElementById('etiq2-label-select');
+        const qtyInput    = document.getElementById('etiq2-qty');
+        const printBtn    = document.getElementById('etiq2-print-btn');
+
+        function updateLabelSelect() {
+            const labels = ETIQUETTES[catSelect.value] || [];
+            labelSelect.innerHTML = labels.map((e, i) => `<option value="${i}">${etiq2_escapeHTML(e.label)}</option>`).join('');
+            updatePreview();
+        }
+
+        function getSelectedEti() {
+            return (ETIQUETTES[catSelect.value] || [])[parseInt(labelSelect.value)] || null;
+        }
+
+        function updatePreview() {
+            const eti = getSelectedEti();
+            preview.textContent = eti ? `${eti.action}\n${eti.label}\n${etiq2_buildSignature()}` : '';
+        }
+
+        catSelect.addEventListener('change', updateLabelSelect);
+        labelSelect.addEventListener('change', updatePreview);
+
+        printBtn.addEventListener('click', () => {
+            const eti = getSelectedEti();
+            if (!eti) return;
+            try {
+                etiq2_print(eti, parseInt(qtyInput.value) || 1);
+                etiq2_showFeedback('✓ Envoyé à l\'impression', '#27ae60');
+            } catch(e) {
+                etiq2_showFeedback('✗ Erreur', '#e74c3c');
+            }
+        });
+
+        [labelSelect, qtyInput].forEach(el => {
+            el.addEventListener('keydown', e => { if (e.key === 'Enter') printBtn.click(); });
+        });
+
+        updateLabelSelect();
+    }
+
+    function etiq2_toggle() {
+        const panel = document.getElementById('etiq2-panel');
+        if (!panel) return;
+        const visible = panel.style.display !== 'none';
+        panel.style.display = visible ? 'none' : 'block';
+        if (!visible) {
+            const sig = document.getElementById('etiq2-sig-preview');
+            if (sig) sig.textContent = etiq2_buildSignature() || '(login non détecté)';
+            const catSelect   = document.getElementById('etiq2-cat-select');
+            const labelSelect = document.getElementById('etiq2-label-select');
+            const preview     = document.getElementById('etiq2-label-preview');
+            if (preview && catSelect && labelSelect) {
+                const eti = (ETIQUETTES[catSelect.value] || [])[parseInt(labelSelect.value)];
+                if (eti) preview.textContent = `${eti.action}\n${eti.label}\n${etiq2_buildSignature()}`;
+            }
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', etiq2_buildPanel);
+    } else {
+        setTimeout(etiq2_buildPanel, 1000);
+    }
+
 
 })();
