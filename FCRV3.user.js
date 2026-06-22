@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         FCR ULTRA FINAL TEST
+// @name         FCR Lite Ultra V2
 // @version      2.5.0
 // @description  FCR Lite + Stow Palette + God Mode + Bin Check + Hazmat + Void Theme — All-in-one + Module Toggle Panel
-// @author       @jeanbayd
+// @author        @jeanbayd
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2*
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2/*
 // @match        https://fcresearch-eu.aka.amazon.com/ETZ2*
@@ -842,13 +842,6 @@ table.a-bordered tr:first-child th {
         // Restyle du panneau étiquettes si présent
         const etiqPanel = document.getElementById('etiq2-panel');
         if (etiqPanel) etiq2_restyle(t);
-
-        // Restyle du bouton Bin Check List
-        const binBtn = document.getElementById('bin-check-button');
-        if (binBtn && !binBtn.dataset.incomplete) {
-            const binColor = t.isBase ? '#ff9900' : t.accent;
-            binBtn.style.cssText = `background:${binColor} !important;color:white !important;border:2px solid ${binColor} !important;padding:6px 12px !important;border-radius:4px !important;cursor:pointer !important;font-weight:bold !important;font-size:12px !important;z-index:9999 !important;position:relative !important;display:inline-block !important;vertical-align:middle !important;`;
-        }
     }
 
     applyTheme(currentTheme);
@@ -2468,7 +2461,6 @@ table.a-bordered tr:first-child th {
                 const printButton = document.createElement('button');
                 printButton.id = 'bin-check-button';
                 printButton.innerHTML = '🖨️ Generate Bin Check List';
-                if (isIncomplete) printButton.dataset.incomplete = '1';
                 printButton.style.cssText = `background:${isIncomplete ? '#8A2BE2' : '#ff9900'} !important;color:white !important;border:none !important;padding:6px 12px !important;border-radius:4px !important;cursor:pointer !important;font-weight:bold !important;font-size:12px !important;z-index:9999 !important;position:relative !important;display:inline-block !important;vertical-align:middle !important;`;
                 printButton.onclick = generateBinCheckList;
 
@@ -3059,6 +3051,9 @@ function filterBins(){const checkboxes=document.querySelectorAll('.bin-checkbox:
         return parts.join(' ');
     }
 
+
+
+
     function etiq2_print(etiquette, quantity) {
         const sig    = etiq2_buildSignature();
         const action = etiq2_escapeHTML(etiquette.action.trim());
@@ -3066,63 +3061,90 @@ function filterBins(){const checkboxes=document.querySelectorAll('.bin-checkbox:
         const sigEsc = etiq2_escapeHTML(sig);
         const qty    = Math.max(1, parseInt(quantity) || 1);
 
-        let pages = '';
-        for (let i = 0; i < qty; i++) {
-            pages += `
-            <div class="etq-page">
-                <div class="etq-block">
-                    <div class="etq-cell">
-                        <div class="etq-action">${action}</div>
-                        <div class="etq-title">${label}</div>
-                        <div class="etq-sig">${sigEsc}</div>
-                    </div>
-                </div>
-            </div>`;
-        }
+        const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
 
-        const printHTML = `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>Étiquette</title>
-<style>
-    @page { size: 104mm 76.2mm; margin: 0; }
-    html, body { margin:0 !important; padding:0 !important; font-family:Arial,sans-serif; width:104mm; }
-    .etq-page { width:104mm; height:76.2mm; page-break-after:always; margin:0; padding:0; overflow:hidden; position:relative; }
+        // ── CSS Chrome (iframe, mm natifs) ────────────────────────────────
+        const cssChrome = `
+    @page { size: 104mm 76.2mm landscape; margin: 0; }
+    html, body { margin:0; padding:0; width:104mm; font-family:Arial,sans-serif; }
+    .etq-page { width:104mm; height:76.2mm; page-break-after:always; overflow:hidden; position:relative; }
     .etq-page:last-child { page-break-after:auto; }
-    .etq-block { width:104mm; height:76.2mm; margin:0; padding:0; }
     .etq-cell {
-        position:absolute;
-        top:-10mm; left:40mm; right:-10mm; bottom:3mm;
+        position:absolute; top:-10mm; left:40mm; right:-10mm; bottom:3mm;
         box-sizing:border-box; border:2px solid #000; background:#fff;
         display:flex; flex-direction:column; align-items:center; justify-content:center;
         text-align:center; padding:4mm 5mm; gap:2.5mm;
     }
-    .etq-action { font-size:11pt; font-weight:bold; color:#000; line-height:1.1; }
-    .etq-title  { font-size:30pt; font-weight:bold; color:#000; line-height:1.05; word-wrap:break-word; }
-    .etq-sig    { font-size:15pt; font-weight:bold; color:#000; line-height:1.1; }
-</style>
-</head><body>
-${pages}
-<script><\/script>
-</body></html>`;
+    .etq-action { font-size:11pt; font-weight:bold; color:#000; }
+    .etq-title  { font-size:30pt; font-weight:bold; color:#000; word-wrap:break-word; }
+    .etq-sig    { font-size:15pt; font-weight:bold; color:#000; }`;
 
-        try {
-            const iframe = document.createElement('iframe');
-            iframe.style.cssText = 'position:fixed;width:0;height:0;border:0;visibility:hidden;';
-            document.body.appendChild(iframe);
-            const doc = iframe.contentWindow.document;
-            doc.open(); doc.write(printHTML); doc.close();
-            iframe.onload = function() {
-                try {
-                    iframe.contentWindow.focus();
-                    iframe.contentWindow.print();
-                } catch(e) {
-                    const w = window.open('', '_blank', 'width=500,height=400');
-                    if (w) { w.document.write(printHTML); w.document.close(); }
-                }
-                setTimeout(() => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); }, 90000);
-            };
-        } catch(e) {
-            const w = window.open('', '_blank', 'width=500,height=400');
-            if (w) { w.document.write(printHTML); w.document.close(); }
+        // ── CSS Firefox (fenêtre réelle, px calculés à 96dpi) ─────────────
+        // Firefox dans une vraie fenêtre rend les px de façon fiable.
+        // On dimensionne le body exactement à la taille de la page physique
+        // exprimée en px screen, et on laisse @page gérer le mapping mm→papier.
+        const cssFirefox = `
+    @page { size: 104mm 76.2mm landscape; margin: 0; }
+    * { box-sizing: border-box; }
+    html { margin:0; padding:0; }
+    body { margin:0; padding:0; font-family:Arial,sans-serif; }
+    .etq-page { width:100vw; height:100vh; page-break-after:always; overflow:hidden; position:relative; display:flex; align-items:center; justify-content:center; }
+    .etq-page:last-child { page-break-after:auto; }
+    .etq-cell {
+        width:90%; height:90%;
+        box-sizing:border-box; border:2px solid #000; background:#fff;
+        display:flex; flex-direction:column; align-items:center; justify-content:center;
+        text-align:center; padding:2% 3%; gap:2%;
+        margin-left:25mm; margin-bottom:13mm;
+    }
+    .etq-action { font-size:8pt;  font-weight:bold; color:#000; }
+    .etq-title  { font-size:20pt; font-weight:bold; color:#000; word-wrap:break-word; }
+    .etq-sig    { font-size:9pt;  font-weight:bold; color:#000; }`;
+
+        let pages = '';
+        for (let i = 0; i < qty; i++) {
+            pages += `<div class="etq-page"><div class="etq-cell"><div class="etq-action">${action}</div><div class="etq-title">${label}</div><div class="etq-sig">${sigEsc}</div></div></div>`;
+        }
+
+        const printHTML = (css) => `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Etiquette</title><style>${css}</style></head><body>${pages}</body></html>`;
+
+        if (isFirefox) {
+            // Fenêtre visible normale — Firefox respecte @page dans ce contexte
+            const w = window.open('', '_blank', 'width=800,height=600');
+            if (!w) { alert('Veuillez autoriser les popups pour imprimer.'); return; }
+            w.document.open();
+            w.document.write(printHTML(cssFirefox));
+            w.document.close();
+            // Attendre le rendu complet avant d'imprimer
+            w.addEventListener('load', function() {
+                setTimeout(function() {
+                    w.focus();
+                    w.print();
+                    setTimeout(function() { try { w.close(); } catch(e) {} }, 3000);
+                }, 300);
+            });
+        } else {
+            // Chrome : iframe caché (comportement original)
+            try {
+                const iframe = document.createElement('iframe');
+                iframe.style.cssText = 'position:fixed;width:0;height:0;border:0;visibility:hidden;';
+                document.body.appendChild(iframe);
+                const doc = iframe.contentWindow.document;
+                doc.open(); doc.write(printHTML(cssChrome)); doc.close();
+                iframe.onload = function() {
+                    try {
+                        iframe.contentWindow.focus();
+                        iframe.contentWindow.print();
+                    } catch(e) {
+                        const w = window.open('', '_blank');
+                        if (w) { w.document.write(printHTML(cssChrome)); w.document.close(); }
+                    }
+                    setTimeout(() => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); }, 90000);
+                };
+            } catch(e) {
+                const w = window.open('', '_blank');
+                if (w) { w.document.write(printHTML(cssChrome)); w.document.close(); }
+            }
         }
     }
 
