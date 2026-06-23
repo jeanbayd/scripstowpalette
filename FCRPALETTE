@@ -1,0 +1,289 @@
+// ==UserScript==
+// @name         FCR Lite — Analyse Palette
+// @version      2.5.0
+// @description  Analyse palette Stow — calcule automatiquement Palette Land, Stow from Palette, Palette Land AR Floor selon poids/velocity/dimensions
+// @author       @JEANBAYD
+// @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2*
+// @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2/*
+// @match        https://fcresearch-eu.aka.amazon.com/ETZ2*
+// @match        https://fcresearch-eu.aka.amazon.com/ETZ2/*
+// @match        https://fcresearch-eu.aka.amazon.com/*
+// @match        https://qi-fcresearch-eu.corp.amazon.com/ETZ2*
+// @match        https://fcresearch-eu.aka.amazon.com/*/results?s=*
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @run-at       document-end
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // ─── Mini-subset THEMES pour le coloriage des cartes ────────────
+    const THEMES = {
+        base:      { bg1:'transparent', bg2:'transparent', bg3:'transparent', accent:'', accentDark:'', isBase:true },
+        bleu:      { bg1:'#0a1128', bg2:'#121d3d', bg3:'#1c2b5a', accent:'#cfb53b', accentDark:'#7a632a' },
+        rouge:     { bg1:'#1a0505', bg2:'#2d0a0a', bg3:'#4a1010', accent:'#e07b3b', accentDark:'#7a3a1a' },
+        vert:      { bg1:'#051a0a', bg2:'#0a2d12', bg3:'#104a1e', accent:'#4ecb71', accentDark:'#1a7a32' },
+        aurora:    { bg1:'#020c12', bg2:'#06201f', bg3:'#0a3a2e', accent:'#5bffc1', accentDark:'#0f6b52', isGradient:true, gradBtn:'linear-gradient(135deg, #0a3a2e 0%, #1c9c7a 100%)' },
+        magma:     { bg1:'#160402', bg2:'#2c0805', bg3:'#4a0f08', accent:'#ff7a3d', accentDark:'#8a2a10', isGradient:true, gradBtn:'linear-gradient(135deg, #4a0f08 0%, #cc4a18 100%)' },
+        nebula:    { bg1:'#0d0118', bg2:'#1a0535', bg3:'#2a0f52', accent:'#c084fc', accentDark:'#6b21a8', isGradient:true, gradBtn:'linear-gradient(135deg, #2a0f52 0%, #7c3aed 100%)' },
+        glacier:   { bg1:'#001820', bg2:'#002535', bg3:'#003a50', accent:'#00e5ff', accentDark:'#006080', isGradient:true, gradBtn:'linear-gradient(135deg, #003a50 0%, #0099bb 100%)' },
+        obsidian:  { bg1:'#0a0a0a', bg2:'#141414', bg3:'#1e1e1e', accent:'#e8c97a', accentDark:'#7a6020', isGradient:true, gradBtn:'linear-gradient(135deg, #1e1e1e 0%, #4a3a10 100%)' },
+        crimson:   { bg1:'#120008', bg2:'#200010', bg3:'#380020', accent:'#ff4080', accentDark:'#800030', isGradient:true, gradBtn:'linear-gradient(135deg, #380020 0%, #cc0050 100%)' },
+        carbon:    { bg1:'#080808', bg2:'#101010', bg3:'#181818', accent:'#80ffe8', accentDark:'#205040', isGradient:true, gradBtn:'linear-gradient(135deg, #181818 0%, #204038 100%)' },
+        ironblue:  { bg1:'#050d18', bg2:'#0a1828', bg3:'#102540', accent:'#b0d0ff', accentDark:'#203860', isGradient:true, gradBtn:'linear-gradient(135deg, #102540 0%, #204880 100%)' },
+        sakura:    { bg1:'#120008', bg2:'#1e0812', bg3:'#30101e', accent:'#ffb8d0', accentDark:'#804060', isGradient:true, gradBtn:'linear-gradient(135deg, #30101e 0%, #804060 100%)' },
+        cyberpunk: { bg1:'#0a0a00', bg2:'#141400', bg3:'#202000', accent:'#f9e900', accentDark:'#706800', isGradient:true, gradBtn:'linear-gradient(135deg, #202000 0%, #706800 100%)' },
+        void_theme:{ bg1:'#000000', bg2:'#050505', bg3:'#0a0a0a', accent:'#00ff88', accentDark:'#006633', isGradient:true, gradBtn:'linear-gradient(135deg, #0a0a0a 0%, #006633 100%)' },
+    };
+    const currentTheme = GM_getValue('currentTheme', 'base');
+
+    // ════════════════════════════════════════════════════════════════
+    // ===== STOW PALETTE PANEL =====
+    // ════════════════════════════════════════════════════════════════
+    (function() {
+        const LABEL_WEIGHT   = ['Weight', 'Poids'];
+        const LABEL_VELOCITY = ['ASIN Velocity (approx)', 'Vélocité de l\'ASIN (approximativement)', 'Velocité de l\'ASIN (approximativement)', 'Vélocité de l\u2019ASIN (approximativement)'];
+        const LABEL_DIM      = ['Dimensions'];
+        let paletteInjected = false;
+
+        const PALETTE_STYLES = `
+            #palette-panel { margin:18px 0 6px; font-family:Arial,sans-serif; }
+            #palette-panel .pp-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+            #palette-panel .pp-title { font-size:11px; font-weight:700; color:#555; letter-spacing:0.07em; text-transform:uppercase; }
+            #palette-panel .pp-copy-btn { font-size:11px; font-weight:600; color:#0066c0; background:#eaf3fb; border:1px solid #b5d4f4; border-radius:6px; padding:3px 10px; cursor:pointer; transition:background 0.15s; }
+            #palette-panel .pp-copy-btn:hover { background:#d0e8f8; }
+            #palette-panel .pp-copy-btn.copied { color:#27500A; background:#EAF3DE; border-color:#97C459; }
+            #palette-panel .pp-alert { display:flex; align-items:center; gap:8px; background:#FAEEDA; border:1px solid #EF9F27; border-radius:8px; padding:8px 12px; font-size:12px; color:#633806; margin-bottom:10px; }
+            #palette-panel .pp-alert-icon { font-size:15px; flex-shrink:0; }
+            #palette-panel .pp-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+            #palette-panel .pp-card { border-radius:8px; padding:12px 14px; box-sizing:border-box; cursor:help; position:relative; }
+            #palette-panel .pp-card-label { font-size:11px; font-weight:600; opacity:0.75; margin-bottom:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+            #palette-panel .pp-card-value { font-size:22px; font-weight:700; line-height:1; display:flex; align-items:center; gap:5px; margin-bottom:10px; }
+            #palette-panel .pp-card-icon { font-size:17px; }
+            #palette-tooltip { position:fixed; z-index:99999; background:#1a1a1a; color:#f0f0f0; font-family:Arial,sans-serif; font-size:12px; line-height:1.6; border-radius:8px; padding:10px 14px; max-width:260px; pointer-events:none; opacity:0; transition:opacity 0.15s; box-shadow:0 4px 16px rgba(0,0,0,0.25); }
+            #palette-tooltip.visible { opacity:1; }
+            #palette-tooltip .tt-title { font-weight:700; font-size:12px; margin-bottom:6px; color:#fff; }
+            #palette-tooltip .tt-row { display:flex; justify-content:space-between; gap:12px; }
+            #palette-tooltip .tt-key { color:#aaa; }
+            #palette-tooltip .tt-val { font-weight:600; color:#fff; }
+            #palette-tooltip .tt-sep { border:none; border-top:1px solid #333; margin:6px 0; }
+            #palette-tooltip .tt-crit { color:#ccc; font-size:11px; }
+            #palette-tooltip .tt-crit b { color:#fff; }
+        `;
+
+        function injectPaletteStyles() {
+            if (document.getElementById('palette-styles')) return;
+            const style = document.createElement('style');
+            style.id = 'palette-styles'; style.textContent = PALETTE_STYLES;
+            (document.head || document.documentElement).appendChild(style);
+        }
+
+        function getFieldValueMulti(labelCandidates) {
+            const cells = document.querySelectorAll('td, th');
+            for (const label of labelCandidates) {
+                const labelLower = label.toLowerCase().trim();
+                for (const cell of cells) {
+                    if (cell.textContent.trim().toLowerCase() === labelLower) {
+                        const row = cell.closest('tr');
+                        if (row) {
+                            for (const td of row.querySelectorAll('td')) { if (td !== cell) return td.textContent.trim(); }
+                            const sib = cell.nextElementSibling;
+                            if (sib) return sib.textContent.trim();
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        function parseNumber(str) {
+            if (!str) return null;
+            let s = str.replace(/\s/g, '');
+            const lastComma = s.lastIndexOf(','), lastDot = s.lastIndexOf('.');
+            if (lastComma > lastDot) s = s.replace(/\./g, '').replace(',', '.');
+            else s = s.replace(/,/g, '');
+            const match = s.match(/[\d.]+/);
+            if (!match) return null;
+            const val = parseFloat(match[0]);
+            return isNaN(val) ? null : val;
+        }
+
+        function getMaxDimension(str) {
+            if (!str) return null;
+            const normalized = str.replace(/,/g, '.');
+            const matches = normalized.match(/[\d.]+/g);
+            if (!matches) return null;
+            return Math.max(...matches.map(Number).filter(n => !isNaN(n)));
+        }
+
+        function computeResults(weight, velocity, maxDim) {
+            const R = {};
+            R.paletteLand = (weight !== null && velocity !== null && maxDim !== null)
+                ? (weight > 5 && velocity > 100 && maxDim >= 25) : null;
+            if (weight !== null && velocity !== null && maxDim !== null) {
+                const cA = (weight >= 5 && maxDim >= 35.56 && velocity <= 45);
+                const cB = (weight > 3 && weight < 5 && velocity <= 100);
+                R.stowFromPalette = cA || cB;
+            } else R.stowFromPalette = null;
+            if (weight !== null && velocity !== null) {
+                const cA = (weight > 5 && velocity > 45 && velocity < 100);
+                const cB = (weight > 3 && weight < 5 && velocity >= 100);
+                R.paletteLandARFloor = cA || cB;
+            } else R.paletteLandARFloor = null;
+            return R;
+        }
+
+        function tooltipHTML(key, weight, velocity, maxDim) {
+            const fmt = v => v !== null ? v : '—';
+            const check = (cond, txt) => `<div class="tt-crit">${cond ? '✔' : '✘'} <b>${txt}</b></div>`;
+            const shared = `
+                <div class="tt-row"><span class="tt-key">Poids</span><span class="tt-val">${fmt(weight)} kg</span></div>
+                <div class="tt-row"><span class="tt-key">Velocity</span><span class="tt-val">${fmt(velocity)}</span></div>
+                <div class="tt-row"><span class="tt-key">Dim. max</span><span class="tt-val">${fmt(maxDim)} cm</span></div>
+                <hr class="tt-sep">`;
+            if (key === 'paletteLand') return shared + check(weight > 5, `Poids > 5 kg (${fmt(weight)} kg)`) + check(velocity > 100, `Velocity > 100 (${fmt(velocity)})`) + check(maxDim >= 25, `Dim ≥ 25 cm (${fmt(maxDim)} cm)`);
+            if (key === 'stowFromPalette') return shared + `<div class="tt-crit" style="color:#aaa;margin-bottom:3px">Condition A :</div>` + check(weight >= 5, `Poids ≥ 5 kg`) + check(maxDim >= 35.56, `Dim ≥ 35.56 cm`) + check(velocity <= 45, `Velocity ≤ 45`) + `<div class="tt-crit" style="color:#aaa;margin:4px 0 3px">Condition B :</div>` + check(weight > 3 && weight < 5, `3 < Poids < 5 kg`) + check(velocity <= 100, `Velocity ≤ 100`);
+            if (key === 'paletteLandARFloor') return shared + `<div class="tt-crit" style="color:#aaa;margin-bottom:3px">Condition A :</div>` + check(weight > 5, `Poids > 5 kg`) + check(velocity > 45 && velocity < 100, `45 < Velocity < 100`) + `<div class="tt-crit" style="color:#aaa;margin:4px 0 3px">Condition B :</div>` + check(weight > 3 && weight < 5, `3 < Poids < 5 kg`) + check(velocity >= 100, `Velocity ≥ 100`);
+            return '';
+        }
+
+        function buildPalettePanel(results, weight, velocity, maxDim, missing) {
+            const CARDS = [
+                { label: 'Palette land', emoji: '📦', key: 'paletteLand' },
+                { label: 'Stow from palette', emoji: '🏗️', key: 'stowFromPalette' },
+                { label: 'Palette land AR floor', emoji: '🔍', key: 'paletteLandARFloor' },
+            ];
+            const panel = document.createElement('div');
+            panel.id = 'palette-panel';
+            const header = document.createElement('div');
+            header.className = 'pp-header';
+            header.innerHTML = `<span class="pp-title">🏗️ Analyse Palette</span><button id="pp-copy-btn" class="pp-copy-btn">📋 Copier le résumé</button>`;
+            panel.appendChild(header);
+            if (missing.length > 0) {
+                const alertEl = document.createElement('div');
+                alertEl.className = 'pp-alert';
+                alertEl.innerHTML = `<span class="pp-alert-icon">⚠️</span><span>Champ(s) non trouvé(s) : <strong>${missing.join(', ')}</strong>. Résultats incomplets.</span>`;
+                panel.appendChild(alertEl);
+            }
+            const grid = document.createElement('div');
+            grid.className = 'pp-grid';
+            const th = THEMES[currentTheme] || THEMES.base;
+            const isDark = !th.isBase;
+            CARDS.forEach(({ label, emoji, key }) => {
+                const val = results[key], isYes = val === true, isNo = val === false;
+                let bg, border, color;
+                if (isDark) {
+                    bg     = isYes ? th.bg3    : isNo ? '#3a0a0a' : th.bg2;
+                    border = isYes ? th.accent  : isNo ? '#c04040' : th.accentDark;
+                    color  = isYes ? th.accent  : isNo ? '#f08080' : '#888';
+                } else {
+                    bg     = isYes ? '#EAF3DE' : isNo ? '#FCEBEB' : '#f5f5f5';
+                    border = isYes ? '#97C459' : isNo ? '#F09595' : '#ddd';
+                    color  = isYes ? '#27500A' : isNo ? '#791F1F' : '#888';
+                }
+                const icon = isYes ? '✔' : isNo ? '✘' : '—';
+                const txt  = isYes ? 'Oui' : isNo ? 'Non' : 'N/A';
+                const card = document.createElement('div');
+                card.className = 'pp-card';
+                card.style.cssText = `background:${bg};border:1px solid ${border};color:${color};`;
+                card.dataset.tooltipKey = key;
+                card.innerHTML = `<div class="pp-card-label">${emoji} ${label}</div><div class="pp-card-value"><span class="pp-card-icon">${icon}</span><span>${txt}</span></div>`;
+                grid.appendChild(card);
+            });
+            panel.appendChild(grid);
+            const tooltip = document.createElement('div');
+            tooltip.id = 'palette-tooltip';
+            document.body.appendChild(tooltip);
+            grid.addEventListener('mousemove', e => {
+                const card = e.target.closest('.pp-card');
+                if (!card) { tooltip.classList.remove('visible'); return; }
+                const key = card.dataset.tooltipKey;
+                tooltip.innerHTML = `<div class="tt-title">Détail — ${card.querySelector('.pp-card-label').textContent.trim()}</div>` + tooltipHTML(key, weight, velocity, maxDim);
+                tooltip.classList.add('visible');
+                const x = e.clientX + 14;
+                tooltip.style.left = (x + 270 > window.innerWidth ? x - 290 : x) + 'px';
+                tooltip.style.top = (e.clientY - 10) + 'px';
+            });
+            grid.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
+            panel.querySelector('#pp-copy-btn').addEventListener('click', () => {
+                const lines = [
+                    '=== Analyse Palette ===',
+                    `Page     : ${window.location.href}`,
+                    `Poids    : ${weight !== null ? weight + ' kg' : 'N/A'}`,
+                    `Velocity : ${velocity !== null ? velocity : 'N/A'}`,
+                    `Dim. max : ${maxDim !== null ? maxDim + ' cm' : 'N/A'}`,
+                    '---',
+                    `Palette land          : ${results.paletteLand === null ? 'N/A' : results.paletteLand ? 'OUI' : 'NON'}`,
+                    `Stow from palette     : ${results.stowFromPalette === null ? 'N/A' : results.stowFromPalette ? 'OUI' : 'NON'}`,
+                    `Palette land AR floor : ${results.paletteLandARFloor === null ? 'N/A' : results.paletteLandARFloor ? 'OUI' : 'NON'}`,
+                ].join('\n');
+                navigator.clipboard.writeText(lines).then(() => {
+                    const btn = panel.querySelector('#pp-copy-btn');
+                    btn.textContent = '✔ Copié !'; btn.classList.add('copied');
+                    setTimeout(() => { btn.textContent = '📋 Copier le résumé'; btn.classList.remove('copied'); }, 2000);
+                }).catch(() => {
+                    const ta = document.createElement('textarea');
+                    ta.value = lines; document.body.appendChild(ta); ta.select();
+                    document.execCommand('copy'); document.body.removeChild(ta);
+                });
+            });
+            return panel;
+        }
+
+        function findAnchorTable() {
+            const candidates = [...LABEL_WEIGHT, ...LABEL_VELOCITY];
+            const cells = document.querySelectorAll('td, th');
+            for (const cell of cells) {
+                if (candidates.some(l => l.toLowerCase() === cell.textContent.trim().toLowerCase())) {
+                    const table = cell.closest('table');
+                    if (table) return table;
+                }
+            }
+            return null;
+        }
+
+        function tryInjectPalette() {
+            if (paletteInjected) return;
+            injectPaletteStyles();
+            const anchorTable = findAnchorTable();
+            if (!anchorTable) return;
+            const weightRaw   = getFieldValueMulti(LABEL_WEIGHT);
+            const velocityRaw = getFieldValueMulti(LABEL_VELOCITY);
+            const dimRaw      = getFieldValueMulti(LABEL_DIM);
+            const weight   = parseNumber(weightRaw);
+            const velocity = parseNumber(velocityRaw);
+            const maxDim   = getMaxDimension(dimRaw);
+            if (weight === null && velocity === null && maxDim === null) return;
+            const missing = [];
+            if (weight === null)   missing.push('Weight / Poids');
+            if (velocity === null) missing.push('ASIN Velocity (approx)');
+            if (maxDim === null)   missing.push('Dimensions');
+            const results = computeResults(weight, velocity, maxDim);
+            const panel = buildPalettePanel(results, weight, velocity, maxDim, missing);
+            anchorTable.parentNode.insertBefore(panel, anchorTable.nextSibling);
+            paletteInjected = true;
+            paletteObserver.disconnect();
+        }
+
+        let paletteDebouncerTimer = null;
+        const paletteObserver = new MutationObserver(() => {
+            if (paletteInjected) { paletteObserver.disconnect(); return; }
+            clearTimeout(paletteDebouncerTimer);
+            paletteDebouncerTimer = setTimeout(tryInjectPalette, 400);
+        });
+
+        function startPalette() {
+            injectPaletteStyles();
+            tryInjectPalette();
+            if (!paletteInjected) {
+                paletteObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
+                setTimeout(() => paletteObserver.disconnect(), 30000);
+            }
+        }
+
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startPalette);
+        else startPalette();
+    })();
+
+})();
