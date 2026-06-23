@@ -692,6 +692,14 @@ table.a-bordered tr:first-child th {
             .barcodes_panel > p { color:#444; }
             /* Bin Check selects — thème Base */
             #disposition-filter, #consumer-filter, #container-filter, #bin-check-comment { background:#ffffff; color:#222; border-color:#ccc; }
+            /* Boutons impression God Mode — thème Base */
+            .fcr-print-btn { padding:2px 7px; margin-left:5px; cursor:pointer; border:1px solid #999; border-radius:4px; background:#f0f0f0; color:#333; font-size:12px; transition:background 0.15s, border-color 0.15s; display:inline-block; vertical-align:middle; }
+            .fcr-print-btn:hover { background:#e0e0e0; border-color:#666; }
+            .fcr-print-btn:active { transform:scale(0.94); }
+            /* Prep rows — thème Base */
+            .prep-instructions-row td { background-color:#fff8e1 !important; color:#7a4f00 !important; border-left:4px solid #e67e22 !important; }
+            .prep-instructions-row.prep-noprep td { background-color:#f0fff0 !important; color:#276621 !important; border-left:4px solid #27ae60 !important; }
+            .prep-instructions-row.prep-unknown td { background-color:#fffde7 !important; color:#7a6000 !important; border-left:4px solid #f1c40f !important; }
             `;
         } else {
             const panelBg = t.isGradient ? t.gradPanel : t.bg2;
@@ -813,6 +821,30 @@ table.a-bordered tr:first-child th {
         .hazmat-fcr-info { flex:1; }
         .hazmat-fcr-message { font-size:11px; margin-top:6px; opacity:0.85; border-left:3px solid; padding-left:8px; }
         .hazmat-fcr-meta { display:flex; gap:12px; margin-top:4px; font-size:11px; opacity:0.7; }
+        /* Boutons impression God Mode — suit le thème actif */
+        .fcr-print-btn {
+            padding:2px 7px; margin-left:5px; cursor:pointer;
+            border:1px solid ${t.accentDark}; border-radius:4px;
+            background:${t.isGradient ? t.gradBtn : t.bg3};
+            color:${t.accent}; font-size:12px;
+            transition:background 0.15s, border-color 0.15s, color 0.15s;
+            display:inline-block; vertical-align:middle;
+        }
+        .fcr-print-btn:hover {
+            background:${t.isGradient ? t.gradAccent : t.accent};
+            color:${t.bg1}; border-color:${t.accent};
+            box-shadow:0 0 6px ${t.accent}66;
+        }
+        .fcr-print-btn:active { transform:scale(0.94); }
+        /* Prep rows dans processPurchaseOrderItems — suit le thème */
+        .prep-instructions-row td {
+            background-color:${t.prepBg} !important;
+            border-left:4px solid ${t.prepYes} !important;
+            font-weight:bold;
+        }
+        .prep-instructions-row.prep-yes td  { color:${t.prepYes} !important; border-left-color:${t.prepYes} !important; }
+        .prep-instructions-row.prep-noprep td { color:${t.prepNoPrep} !important; border-left-color:${t.prepNoPrep} !important; }
+        .prep-instructions-row.prep-unknown td { color:#f1c40f !important; border-left-color:#f1c40f !important; background-color:${t.bg3} !important; }
         ${t.isAnimated && t.animCSS ? t.animCSS : ''}
         `;
         }
@@ -825,20 +857,9 @@ table.a-bordered tr:first-child th {
         const oldAnimEl = document.getElementById('fcr-anim-style');
         if (oldAnimEl) oldAnimEl.remove();
 
-        document.querySelectorAll('.prep-instructions-row').forEach(row => {
-            const th = row.querySelector('th');
-            const td = row.querySelector('td');
-            if (!th || !td) return;
-            if (t.isBase) {
-                th.style.cssText = 'font-weight:bold;';
-                const isNoPrep = td.classList.contains('prep-noprep');
-                td.style.cssText = `color:${isNoPrep ? '#f37d15' : 'pink'} !important; font-weight:bold;`;
-            } else {
-                th.style.cssText = `background-color:${t.bg3} !important; color:${t.accent} !important; font-weight:bold;`;
-                const isNoPrep = td.classList.contains('prep-noprep');
-                td.style.cssText = `background-color:${t.prepBg} !important; color:${isNoPrep ? t.prepNoPrep : t.prepYes} !important; font-weight:bold;`;
-            }
-        });
+        // Les prep rows dans les tables PO sont stylées via classes CSS (.prep-yes/.prep-noprep/.prep-unknown)
+        // et suivent automatiquement le thème via les règles injectées dans applyTheme().
+        // Les prep rows dans nopoPrepInstructions (a-keyvalue) restent gérées par inline style dans nopoPrepInstructions().
 
         const hazmatPanel = document.getElementById('hazmat-fcr-panel');
         if (hazmatPanel) injectHazmatPanel_restyle(t);
@@ -1312,17 +1333,24 @@ table.a-bordered tr:first-child th {
                 prepRow.className = 'prep-instructions-row';
                 const prepCell = document.createElement('td');
                 prepCell.colSpan = row.children.length;
-                prepCell.style.padding = '5px';
-                prepCell.style.borderTop = '1px solid #ddd';
+                prepCell.style.padding = '6px 10px';
                 let instructions, isPrep;
                 if (isResearchPrep) {
                     ({ instructions, isPrep } = result);
                     instructions = Array.isArray(instructions) ? instructions.join(', ') : instructions;
                 } else { instructions = result; isPrep = instructions !== 'No Prep'; }
-                if (isPrep === 'unknown') { prepCell.style.backgroundColor = '#FFFF00'; prepCell.style.color = 'black'; unknownCount++; }
-                else if (isPrep) { prepCell.style.color = 'pink'; prepCell.style.backgroundColor = 'black'; prepCount++; }
-                else { noPrepCount++; }
-                prepCell.innerHTML = `<b>^^Prep:</b> ${instructions}`;
+                if (isPrep === 'unknown') {
+                    prepRow.classList.add('prep-unknown');
+                    unknownCount++;
+                } else if (isPrep) {
+                    prepRow.classList.add('prep-yes');
+                    prepCount++;
+                } else {
+                    prepRow.classList.add('prep-noprep');
+                    noPrepCount++;
+                }
+                const icon = isPrep === 'unknown' ? '⚠️' : isPrep ? '📦' : '✅';
+                prepCell.innerHTML = `<b>${icon} Prep:</b> ${instructions}`;
                 prepRow.appendChild(prepCell);
                 row.parentNode.insertBefore(prepRow, row.nextSibling);
             } catch (error) {
@@ -1763,8 +1791,8 @@ table.a-bordered tr:first-child th {
                                 var type = index === 0 ? "Container" : index === 1 ? "ASIN" : index === 2 ? "FNSku" : index === 3 ? "FCSku" : "Title";
                                 var button = document.createElement("button");
                                 button.innerHTML = "🖶";
-                                button.style.cssText = "padding:2px 5px;margin-left:5px;display:inline-block;";
                                 button.title = `Print ${type}`;
+                                button.className = 'fcr-print-btn';
                                 button.onclick = function() {
                                     var barcode = link.text().trim();
                                     if (index === 11) {
@@ -1825,7 +1853,7 @@ table.a-bordered tr:first-child th {
 
                                 var button = document.createElement("button");
                                 button.innerHTML = "🖶";
-                                button.style.cssText = "padding:2px 8px;margin-left:4px;cursor:pointer;border:1px solid #aaa;border-radius:3px;background:#f0f0f0;";
+                                button.className = 'fcr-print-btn';
                                 button.title = "Print " + type;
                                 button.onclick = function(e) {
                                     e.preventDefault();
@@ -1847,7 +1875,7 @@ table.a-bordered tr:first-child th {
                     var text = elem.text().trim();
                     var button = document.createElement("button");
                     button.innerHTML = "🖶";
-                    button.style.cssText = "padding:2px 5px;margin-left:5px;display:inline-block;";
+                    button.className = 'fcr-print-btn';
                     button.title = "Print Bin";
                     button.onclick = function() { quickPrint(text, 1, text, "Bin", "N/A"); };
                     var buttonContainer = document.createElement("span");
@@ -1866,7 +1894,7 @@ table.a-bordered tr:first-child th {
                         var asin = asinMatch ? asinMatch[1] : link.text().trim();
                         var desc = link.text().trim();
                         var button = document.createElement("button");
-                        button.innerHTML = "🖶"; button.style.cssText = "padding:2px 5px;margin-left:5px;display:inline-block;"; button.title = "Print ASIN";
+                        button.innerHTML = "🖶"; button.className = 'fcr-print-btn'; button.title = "Print ASIN";
                         button.onclick = function() { quickPrint(asin, 1, desc, "ASIN", link[0].href || "N/A"); };
                         var buttonContainer = document.createElement("span");
                         buttonContainer.style.display = "inline-block"; buttonContainer.className = "print-button-container"; buttonContainer.appendChild(button);
@@ -1896,11 +1924,40 @@ table.a-bordered tr:first-child th {
                 request.send(JSON.stringify({ "message": msg }));
             }
 
+            // ── Toast de feedback impression (remplace les alert bloquants) ──
+            function showPrintToast(msg, isSuccess) {
+                const existing = document.getElementById('fcr-print-toast');
+                if (existing) existing.remove();
+                const t = THEMES[currentTheme] || THEMES.bleu;
+                const toast = document.createElement('div');
+                toast.id = 'fcr-print-toast';
+                const bg = isSuccess === true  ? '#27ae60'
+                         : isSuccess === false ? '#e74c3c'
+                         : '#e67e22'; // warning (duplicate)
+                toast.style.cssText = `
+                    position:fixed; bottom:82px; left:50%; transform:translateX(-50%);
+                    background:${bg}; color:#fff;
+                    padding:10px 22px; border-radius:8px;
+                    font-family:Arial,sans-serif; font-size:13px; font-weight:700;
+                    box-shadow:0 4px 18px rgba(0,0,0,0.4);
+                    z-index:999999; pointer-events:none;
+                    opacity:1; transition:opacity 0.4s ease;
+                    white-space:nowrap;
+                `;
+                toast.textContent = msg;
+                document.body.appendChild(toast);
+                setTimeout(() => { toast.style.opacity = '0'; }, 2600);
+                setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 3100);
+            }
+
             function getStatus(url, mode, asin, type, quantity, desc, link) {
                 asin = asin.trim();
                 const now = Date.now();
                 if (asin === lastPrintedBarcode && now - lastPrintTime < 5000) {
-                    Print_Status = "Skipped (Duplicate)"; sendMessageNew(mode, asin, type, quantity, desc, link); return;
+                    Print_Status = "Skipped (Duplicate)";
+                    showPrintToast('⚠️ Doublon ignoré : ' + asin, null);
+                    sendMessageNew(mode, asin, type, quantity, desc, link);
+                    return;
                 }
                 var xmlhttp = new XMLHttpRequest();
                 xmlhttp.open("GET", url, true); xmlhttp.send();
@@ -1909,14 +1966,15 @@ table.a-bordered tr:first-child th {
                         if (xmlhttp.responseText == "valid") {
                             Print_Status = "Successful"; lastPrintedBarcode = asin; lastPrintTime = now;
                             sendMessageNew(mode, asin, type, quantity, desc, link);
+                            showPrintToast('✅ Imprimé : ' + asin + (quantity > 1 ? ' ×' + quantity : ''), true);
                             var searchInput = document.getElementById("search");
                             if (searchInput) searchInput.value = "";
                         } else if (xmlhttp.responseText == "invalid") {
                             Print_Status = "Unsuccessful (Printer Error)"; sendMessageNew(mode, asin, type, quantity, desc, link);
-                            alert("Barcode: " + asin + "\n\nFailed to print! Please check if your printer is plugged in and turned on.");
+                            showPrintToast('❌ Erreur imprimante — vérifier branchement', false);
                         } else {
                             Print_Status = "Unsuccessful (Printmon Error)"; sendMessageNew(mode, asin, type, quantity, desc, link);
-                            alert("Barcode: " + asin + "\n\nFailed to print! Printmon not installed.");
+                            showPrintToast('❌ Printmon non installé', false);
                         }
                     }
                 };
