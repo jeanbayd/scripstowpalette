@@ -2,7 +2,7 @@
 // @name         FCR Lite Ultra V2
 // @version      2.5.0
 // @description  FCR Lite + Stow Palette + God Mode + Bin Check + Hazmat + Void Theme — All-in-one + Module Toggle Panel
-// @author       kyleldri + jeanbayd + mayukoth + vallenda + lindorrl (merged)
+// @author       @JEANBAYD
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2*
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2/*
 // @match        https://fcresearch-eu.aka.amazon.com/ETZ2*
@@ -44,13 +44,18 @@
         hazmat:         { label: '☢️ Hazmat Level Display',       default: true },
     };
 
+    // Cache des modules au démarrage — évite des appels GM_getValue répétés dans les observers
+    const MODULE_CACHE = {};
+    Object.keys(MODULES).forEach(k => { MODULE_CACHE[k] = GM_getValue('module_' + k, MODULES[k].default); });
+
     function isModuleEnabled(key) {
         if (!MODULES[key]) return true; // always-on if not in panel
-        return GM_getValue('module_' + key, MODULES[key].default);
+        return key in MODULE_CACHE ? MODULE_CACHE[key] : GM_getValue('module_' + key, MODULES[key].default);
     }
 
     function setModuleEnabled(key, value) {
         GM_setValue('module_' + key, value);
+        MODULE_CACHE[key] = value; // Mise à jour du cache
     }
 
     function injectModulePanel() {
@@ -194,9 +199,13 @@
         const foundImmediately = processMatches();
         if (foundImmediately && runOnce) return;
 
+        let wfkeTimer = null;
         const obs = new MutationObserver(() => {
-            const found = processMatches();
-            if (found && runOnce) obs.disconnect();
+            clearTimeout(wfkeTimer);
+            wfkeTimer = setTimeout(() => {
+                const found = processMatches();
+                if (found && runOnce) obs.disconnect();
+            }, 80);
         });
         obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
     }
@@ -1016,7 +1025,11 @@ table.a-bordered tr:first-child th {
             const hoverObserver = new MutationObserver(debounce((mutations) => {
                 mutations.forEach(m => { if (m.addedNodes.length) addHoverListeners(); });
             }, 300));
-            hoverObserver.observe(document.body, { childList: true, subtree: true });
+            const hoverRoot = document.querySelector('[data-section-type="product"]') ||
+                              document.querySelector('main') ||
+                              document.querySelector('#content') ||
+                              document.body;
+            hoverObserver.observe(hoverRoot, { childList: true, subtree: true });
         }
         addImageHoverToASINs();
     }
@@ -2651,15 +2664,26 @@ function filterBins(){const checkboxes=document.querySelectorAll('.bin-checkbox:
                 printWindow.document.close();
             }
 
-            let binCheckAttempts = 0;
-            const binCheckInterval = setInterval(() => {
-                binCheckAttempts++;
+            // Remplace le setInterval 1s par un MutationObserver ciblé + fallback
+            let binCheckDone = false;
+            function tryAddBinCheck() {
+                if (binCheckDone) return;
                 if (document.querySelector('[data-section-type="inventory"]') && document.querySelector('#table-inventory')) {
-                    clearInterval(binCheckInterval);
+                    binCheckDone = true;
+                    binCheckObs.disconnect();
                     addBinCheckButton();
                     document.addEventListener('keydown', (e) => { if (e.altKey && e.key === 'p') { e.preventDefault(); generateBinCheckList(); } });
-                } else if (binCheckAttempts > 30) clearInterval(binCheckInterval);
-            }, 1000);
+                }
+            }
+            const binCheckRoot = document.querySelector('main') || document.querySelector('#content') || document.body;
+            let binCheckObsTimer = null;
+            const binCheckObs = new MutationObserver(() => {
+                clearTimeout(binCheckObsTimer);
+                binCheckObsTimer = setTimeout(tryAddBinCheck, 150);
+            });
+            binCheckObs.observe(binCheckRoot, { childList: true, subtree: true });
+            tryAddBinCheck(); // Essai immédiat si déjà chargé
+            setTimeout(() => { binCheckObs.disconnect(); }, 20000); // Sécurité 20s
         })();
     }
 
@@ -3161,7 +3185,7 @@ function filterBins(){const checkboxes=document.querySelectorAll('.bin-checkbox:
                         const w = window.open('', '_blank');
                         if (w) { w.document.write(printHTML(cssChrome)); w.document.close(); }
                     }
-                    setTimeout(() => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); }, 90000);
+                    setTimeout(() => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); }, 5000);
                 };
             } catch(e) {
                 const w = window.open('', '_blank');
