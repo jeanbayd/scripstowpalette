@@ -2378,6 +2378,22 @@ table.a-bordered tr:first-child th {
             return '#aaa';
         }
 
+        function timeAgo(dateStr) {
+            if (!dateStr) return '';
+            // Format attendu : "2026-06-17 11:44:45"
+            const parsed = dateStr.replace(/(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, '$1T$2');
+            const d = new Date(parsed);
+            if (isNaN(d)) return dateStr;
+            const diffMs  = Date.now() - d.getTime();
+            const diffMin = Math.floor(diffMs / 60000);
+            const diffH   = Math.floor(diffMin / 60);
+            const diffD   = Math.floor(diffH / 24);
+            if (diffMin < 1)  return "À l'instant";
+            if (diffMin < 60) return `il y a ${diffMin} min`;
+            if (diffH < 24)   return `il y a ${diffH}h${diffMin % 60 > 0 ? (diffMin % 60) + 'min' : ''}`;
+            return `il y a ${diffD}j`;
+        }
+
         function parseProblemsTable() {
             const table = document.querySelector('#table-problems');
             if (!table) return null;
@@ -2554,7 +2570,7 @@ table.a-bordered tr:first-child th {
                             <span style="color:${textColor};font-size:12px;font-weight:600;">📍 ${p.location}</span>
                             <span style="color:${textColor};font-size:12px;font-weight:600;">👤 ${p.createdBy}</span>
                         </div>
-                        <div style="color:${subTextColor};font-size:11px;margin-top:4px;">🕐 ${p.date}</div>
+                        <div style="color:${subTextColor};font-size:11px;margin-top:4px;" title="${p.date}">🕐 ${timeAgo(p.date)}</div>
                         ${p.creator && p.creator !== p.createdBy ? `<div style="color:${subTextColor};font-size:11px;margin-top:3px;">📂 ${p.creator}</div>` : ''}
                     `;
                     catBody.appendChild(card);
