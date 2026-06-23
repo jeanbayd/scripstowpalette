@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         FCR Lite Ultra V4 — SWEEP
-// @version      2.5.0
+// @version      2.6.0
 // @description  FCR Lite SWEEP — Thèmes, Prep, God Mode Print, Hazmat, Étiquettes, Couleurs, CSV, Weight (sans Bin Check, Floor Finder, Analyse Palette)
 // @author       @JEANBAYD
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2*
@@ -867,6 +867,9 @@ table.a-bordered tr:first-child th {
         // Restyle du panneau étiquettes si présent
         const etiqPanel = document.getElementById('etiq2-panel');
         if (etiqPanel) etiq2_restyle(t);
+
+        // Restyle du widget Problem si présent
+        if (typeof window._fcrProblemRestyle === 'function') window._fcrProblemRestyle();
     }
 
     applyTheme(currentTheme);
@@ -2350,6 +2353,296 @@ table.a-bordered tr:first-child th {
         if (document.querySelector('[data-section-type="inventory"]')) { addWeightButton(); addCsvExportButton(); }
         if (document.querySelector('#table-inventory-history')) addCsvHistoryButton();
     }, 2500);
+
+    // ════════════════════════════════════════════════════════════════
+    // ===== PROBLEM WIDGET — FAB flottant résumé des problèmes =====
+    // Lit #table-problems, groupe par Symptoms, affiche les 3 plus récents
+    // ════════════════════════════════════════════════════════════════
+    (function() {
+
+        // ── Colonnes attendues dans #table-problems (index 0-based) ──
+        // Problem Id | Location | Creator | Status | Creation Date | Created By | Symptoms
+        const COL = { id: 0, location: 1, creator: 2, status: 3, date: 4, createdBy: 5, symptoms: 6 };
+
+        const STATUS_COLOR = {
+            'Resolved':              '#27ae60',
+            'Spawned Child Workflows':'#3498db',
+            'Open':                  '#e67e22',
+            'Closed':                '#888',
+        };
+
+        function getStatusColor(status) {
+            for (const key of Object.keys(STATUS_COLOR)) {
+                if (status && status.toLowerCase().includes(key.toLowerCase())) return STATUS_COLOR[key];
+            }
+            return '#aaa';
+        }
+
+        function parseProblemsTable() {
+            const table = document.querySelector('#table-problems');
+            if (!table) return null;
+            const rows = Array.from(table.querySelectorAll('tbody tr'));
+            if (!rows.length) return null;
+
+            const problems = rows.map(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length < 5) return null;
+                return {
+                    id:        (cells[COL.id]        || {}).textContent?.trim() || '',
+                    location:  (cells[COL.location]  || {}).textContent?.trim() || '',
+                    creator:   (cells[COL.creator]   || {}).textContent?.trim() || '',
+                    status:    (cells[COL.status]    || {}).textContent?.trim() || '',
+                    date:      (cells[COL.date]      || {}).textContent?.trim() || '',
+                    createdBy: (cells[COL.createdBy] || {}).textContent?.trim() || '',
+                    symptoms:  (cells[COL.symptoms]  || {}).textContent?.trim() || 'Unknown',
+                };
+            }).filter(Boolean);
+
+            // Grouper par Symptoms
+            const grouped = {};
+            problems.forEach(p => {
+                const cat = p.symptoms || 'Unknown';
+                if (!grouped[cat]) grouped[cat] = [];
+                grouped[cat].push(p);
+            });
+
+            // Trier chaque groupe par date décroissante, garder les 3 plus récents
+            Object.keys(grouped).forEach(cat => {
+                grouped[cat].sort((a, b) => {
+                    const da = new Date(a.date.replace(/(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, '$1T$2'));
+                    const db = new Date(b.date.replace(/(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, '$1T$2'));
+                    return db - da;
+                });
+                grouped[cat] = grouped[cat].slice(0, 3);
+            });
+
+            return { grouped, total: problems.length };
+        }
+
+        function buildProblemWidget() {
+            if (document.getElementById('fcr-problem-fab')) return;
+            const data = parseProblemsTable();
+            if (!data) return; // Pas de table problems sur cette page
+
+            const t = THEMES[currentTheme] || THEMES.bleu;
+            const isDark = !t.isBase;
+            const panelBg    = isDark ? (t.isGradient ? t.gradPanel : t.bg2) : '#fff';
+            const headerBg   = isDark ? (t.isGradient ? t.gradHeader : t.bg3) : '#f5f5f5';
+            const accentColor = isDark ? t.accent : '#cc0000';
+            const textColor  = isDark ? '#d1d5db' : '#222';
+            const borderColor = isDark ? t.accentDark : '#ddd';
+            const subTextColor = isDark ? '#aab4c8' : '#666';
+
+            const categories = Object.keys(data.grouped);
+            const totalProblems = data.total;
+
+            // ── FAB ──
+            const fab = document.createElement('div');
+            fab.id = 'fcr-problem-fab';
+            fab.title = 'Problems résumé';
+            fab.style.cssText = `
+                position:fixed; bottom:24px; right:140px; z-index:99990;
+                width:48px; height:48px; border-radius:50%;
+                background:${isDark ? (t.isGradient ? t.gradBtn : t.bg3) : '#cc0000'};
+                color:${accentColor}; font-size:20px;
+                display:flex; align-items:center; justify-content:center;
+                cursor:pointer; box-shadow:0 4px 16px rgba(0,0,0,0.4);
+                border:2px solid ${accentColor};
+                transition:transform 0.2s, box-shadow 0.2s;
+                user-select:none; flex-direction:column; gap:0;
+            `;
+            fab.innerHTML = `<span style="font-size:18px;line-height:1;">⚠️</span>`;
+
+            // Badge count
+            const badge = document.createElement('span');
+            badge.id = 'fcr-problem-badge';
+            badge.textContent = totalProblems > 99 ? '99+' : totalProblems;
+            badge.style.cssText = `
+                position:absolute; top:-4px; right:-4px;
+                background:#e74c3c; color:#fff; font-size:9px; font-weight:700;
+                border-radius:10px; padding:1px 5px; min-width:16px; text-align:center;
+                border:1px solid #fff; pointer-events:none;
+            `;
+            fab.style.position = 'fixed';
+            fab.appendChild(badge);
+
+            fab.addEventListener('mouseenter', () => { fab.style.transform = 'scale(1.12)'; });
+            fab.addEventListener('mouseleave', () => { fab.style.transform = 'scale(1)'; });
+            document.body.appendChild(fab);
+
+            // ── Panneau ──
+            const panel = document.createElement('div');
+            panel.id = 'fcr-problem-panel';
+            panel.style.cssText = `
+                position:fixed; bottom:82px; right:140px; z-index:99989;
+                width:440px; border-radius:12px;
+                background:${panelBg}; border:1px solid ${borderColor};
+                box-shadow:0 8px 32px rgba(0,0,0,0.4);
+                font-family:Arial,sans-serif; font-size:14px;
+                display:none; overflow:hidden; max-height:75vh; flex-direction:column;
+            `;
+
+            // Header
+            const header = document.createElement('div');
+            header.style.cssText = `
+                background:${headerBg}; padding:12px 16px;
+                display:flex; align-items:center; justify-content:space-between;
+                border-bottom:1px solid ${borderColor}; flex-shrink:0;
+            `;
+            header.innerHTML = `
+                <span style="font-size:13px;font-weight:700;color:${accentColor};text-transform:uppercase;letter-spacing:0.5px;">
+                    ⚠️ PROBLEMS — ${totalProblems} entrée${totalProblems > 1 ? 's' : ''}
+                </span>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span id="fcr-problem-refresh" title="Rafraîchir" style="cursor:pointer;font-size:14px;color:${accentColor};">🔄</span>
+                    <span id="fcr-problem-close" style="cursor:pointer;color:${accentColor};font-size:16px;font-weight:700;line-height:1;" title="Fermer">✕</span>
+                </div>
+            `;
+
+            // Body scrollable
+            const body = document.createElement('div');
+            body.id = 'fcr-problem-body';
+            body.style.cssText = `padding:12px 16px; overflow-y:auto; flex:1;`;
+
+            // Construire les catégories
+            categories.forEach(cat => {
+                const items = data.grouped[cat];
+
+                // Section header catégorie
+                const catHeader = document.createElement('div');
+                catHeader.style.cssText = `
+                    display:flex; align-items:center; justify-content:space-between;
+                    margin:12px 0 8px 0; cursor:pointer; user-select:none;
+                    padding-bottom:4px; border-bottom:1px solid ${borderColor};
+                `;
+                catHeader.innerHTML = `
+                    <span style="font-size:13px;font-weight:700;color:${accentColor};text-transform:uppercase;letter-spacing:0.4px;">
+                        ${cat}
+                    </span>
+                    <span style="font-size:12px;color:${subTextColor};font-weight:600;">
+                        ${items.length} récent${items.length > 1 ? 's' : ''} <span class="fcr-prob-arrow" style="font-size:10px;">▼</span>
+                    </span>
+                `;
+
+                const catBody = document.createElement('div');
+                catBody.style.cssText = 'margin-bottom:6px;';
+
+                items.forEach((p, i) => {
+                    const statusColor = getStatusColor(p.status);
+                    const card = document.createElement('div');
+                    card.style.cssText = `
+                        background:${isDark ? t.bg1 + 'cc' : '#f8f8f8'};
+                        border:1px solid ${borderColor};
+                        border-left:4px solid ${statusColor};
+                        border-radius:7px; padding:10px 13px;
+                        margin-bottom:8px; font-size:12px;
+                    `;
+
+                    // ID tronqué + copier
+                    const shortId = p.id.length > 40 ? '…' + p.id.slice(-30) : p.id;
+
+                    card.innerHTML = `
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                            <span style="color:${subTextColor};font-size:11px;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px;" title="${p.id}">${shortId}</span>
+                            <span style="
+                                font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;
+                                background:${statusColor}22;color:${statusColor};border:1px solid ${statusColor}55;
+                                white-space:nowrap;flex-shrink:0;margin-left:8px;
+                            ">${p.status}</span>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:2px;">
+                            <span style="color:${textColor};font-size:12px;font-weight:600;">📍 ${p.location}</span>
+                            <span style="color:${textColor};font-size:12px;font-weight:600;">👤 ${p.createdBy}</span>
+                        </div>
+                        <div style="color:${subTextColor};font-size:11px;margin-top:4px;">🕐 ${p.date}</div>
+                        ${p.creator && p.creator !== p.createdBy ? `<div style="color:${subTextColor};font-size:11px;margin-top:3px;">📂 ${p.creator}</div>` : ''}
+                    `;
+                    catBody.appendChild(card);
+                });
+
+                // Toggle collapse catégorie
+                let collapsed = false;
+                catHeader.addEventListener('click', () => {
+                    collapsed = !collapsed;
+                    catBody.style.display = collapsed ? 'none' : 'block';
+                    catHeader.querySelector('.fcr-prob-arrow').textContent = collapsed ? '▶' : '▼';
+                });
+
+                body.appendChild(catHeader);
+                body.appendChild(catBody);
+
+                // Séparateur
+                if (cat !== categories[categories.length - 1]) {
+                    const sep = document.createElement('hr');
+                    sep.style.cssText = `border:none;border-top:1px solid ${borderColor};margin:4px 0;`;
+                    body.appendChild(sep);
+                }
+            });
+
+            panel.appendChild(header);
+            panel.appendChild(body);
+            document.body.appendChild(panel);
+
+            // ── Toggle ──
+            let isOpen = false;
+            function togglePanel() {
+                isOpen = !isOpen;
+                panel.style.display = isOpen ? 'flex' : 'none';
+            }
+
+            fab.addEventListener('click', togglePanel);
+            panel.querySelector('#fcr-problem-close').addEventListener('click', togglePanel);
+
+            // Rafraîchir
+            panel.querySelector('#fcr-problem-refresh').addEventListener('click', () => {
+                document.getElementById('fcr-problem-panel')?.remove();
+                document.getElementById('fcr-problem-fab')?.remove();
+                setTimeout(buildProblemWidget, 200);
+            });
+        }
+
+        // Restyle du widget sur changement de thème
+        function problemWidget_restyle() {
+            const fab   = document.getElementById('fcr-problem-fab');
+            const panel = document.getElementById('fcr-problem-panel');
+            if (!fab && !panel) return;
+            // On reconstruit simplement le widget (plus simple que restyler manuellement)
+            const wasOpen = panel?.style.display !== 'none';
+            document.getElementById('fcr-problem-panel')?.remove();
+            document.getElementById('fcr-problem-fab')?.remove();
+            setTimeout(() => {
+                buildProblemWidget();
+                if (wasOpen) {
+                    const newPanel = document.getElementById('fcr-problem-panel');
+                    if (newPanel) newPanel.style.display = 'flex';
+                }
+            }, 50);
+        }
+
+        // Exposer pour applyTheme
+        window._fcrProblemRestyle = problemWidget_restyle;
+
+        // Init
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => setTimeout(buildProblemWidget, 2000));
+        } else {
+            setTimeout(buildProblemWidget, 2500);
+        }
+
+        // Observer : réinjecter si la table apparaît dynamiquement
+        const probRoot = document.querySelector('main') || document.querySelector('[role="main"]') || document.body;
+        let probDebounce = null;
+        const probObserver = new MutationObserver(() => {
+            clearTimeout(probDebounce);
+            probDebounce = setTimeout(() => {
+                if (!document.getElementById('fcr-problem-fab') && document.querySelector('#table-problems')) {
+                    buildProblemWidget();
+                }
+            }, 800);
+        });
+        probObserver.observe(probRoot, { childList: true, subtree: true });
+
+    })();
 
     // ════════════════════════════════════════════════════════════════
     // ===== MODULE ÉTIQUETTES (fusionné depuis Etiquette Print Standalone)
