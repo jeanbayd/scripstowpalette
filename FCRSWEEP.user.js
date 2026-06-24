@@ -2005,6 +2005,8 @@ table.a-bordered tr:first-child th {
     }
 
     let prepInstructionsTimeout = null;
+    const PREP_TITLE_LABELS = ['Title', 'Titre'];
+    const PREP_ASIN_LABELS  = ['ASIN'];
 
     function nopoPrepInstructions(asin, table) {
         if (prepInstructionsTimeout) clearTimeout(prepInstructionsTimeout);
@@ -2013,7 +2015,7 @@ table.a-bordered tr:first-child th {
             fetchAsinLevelPrepInstructions(asin).then(instructions => {
                 let titleRow;
                 for (let i = 0; i < table.rows.length; i++) {
-                    if (table.rows[i].cells[0].textContent.trim() === 'Title') { titleRow = table.rows[i]; break; }
+                    if (PREP_TITLE_LABELS.includes(table.rows[i].cells[0].textContent.trim())) { titleRow = table.rows[i]; break; }
                 }
                 if (titleRow && !table.querySelector('.prep-instructions-row')) {
                     const newRow = table.insertRow(titleRow.rowIndex + 1);
@@ -2039,10 +2041,14 @@ table.a-bordered tr:first-child th {
 
     function addPrepInstructions() {
         if (!isModuleEnabled('prepDisplay')) return;
-        waitForElement('div.a-column.a-span7').then(column => {
-            column.querySelectorAll('table.a-keyvalue').forEach(table => {
+        // Fallback chain: try a-span7 first (EN), then data-section-type (FR + EN)
+        const tryTables = (tables) => {
+            tables.forEach(table => {
                 if (!table.querySelector('.prep-instructions-row')) {
-                    const asinRow = Array.from(table.rows).find(row => row.cells[0].textContent.trim() === 'ASIN');
+                    const asinRow = Array.from(table.rows).find(row =>
+                        row.cells.length > 0 &&
+                        PREP_ASIN_LABELS.includes(row.cells[0].textContent.trim())
+                    );
                     if (asinRow) {
                         const asinCell = asinRow.cells[1];
                         const asin = asinCell.querySelector('a') ? asinCell.querySelector('a').textContent.trim() : asinCell.textContent.trim();
@@ -2050,6 +2056,19 @@ table.a-bordered tr:first-child th {
                     }
                 }
             });
+        };
+
+        const span7 = document.querySelector('div.a-column.a-span7');
+        if (span7) {
+            const tables = span7.querySelectorAll('table.a-keyvalue');
+            if (tables.length > 0) { tryTables(tables); return; }
+        }
+        // Fallback: product section (works in FR and when a-span7 is absent)
+        waitForElement('[data-section-type="product"] table.a-keyvalue').then(() => {
+            tryTables(document.querySelectorAll('[data-section-type="product"] table.a-keyvalue'));
+        }).catch(() => {
+            // Last resort: any a-keyvalue table on page
+            tryTables(document.querySelectorAll('table.a-keyvalue'));
         });
     }
 
@@ -2925,20 +2944,26 @@ table.a-bordered tr:first-child th {
              * If not found, fall back to "Item Restricted in France" row.
              */
             function findInsertionAnchor() {
+                const tsCageLabels = ['Max units for tsCage (500lbs)', 'Max units for tsCage', 'Unités max pour tsCage (500lbs)', 'Unités max pour tsCage'];
+                const restrictedLabels = ['Item Restricted in France', 'Article soumis à des restrictions en France', 'Article soumis à des restrictions'];
                 const productTable = document.querySelector('[data-section-type="product"] table.a-keyvalue');
                 if (productTable) {
                     for (let row of productTable.querySelectorAll('tbody tr')) {
                         const th = row.querySelector('th');
-                        if (th && th.textContent.trim() === 'Max units for tsCage (500lbs)') return row;
+                        if (th && tsCageLabels.includes(th.textContent.trim())) return row;
                     }
                 }
-                // Fallback: "Item Restricted in France" row
                 const allTables = document.querySelectorAll('table.a-keyvalue');
                 for (let table of allTables) {
                     for (let row of table.querySelectorAll('tbody tr')) {
                         const th = row.querySelector('th');
-                        if (th && th.textContent.trim() === 'Item Restricted in France') return row;
+                        if (th && restrictedLabels.includes(th.textContent.trim())) return row;
                     }
+                }
+                // Last resort: last row of product table
+                if (productTable) {
+                    const rows = productTable.querySelectorAll('tbody tr');
+                    if (rows.length > 0) return rows[rows.length - 1];
                 }
                 return null;
             }
