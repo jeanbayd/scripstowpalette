@@ -503,6 +503,118 @@ table.a-bordered tr:first-child th {
 .a-box { border-top-color: #ff2d78 !important; }
 `
         },
+        fred: {
+            bg1:'#0a1a00', bg2:'#122200', bg3:'#1e3800',
+            accent:'#a8ff3e', accentDark:'#3a6600', label:'🦕 FRED',
+            prepBg:'#122200', prepNoPrep:'#ff6b35', prepYes:'#a8ff3e',
+            isGradient:true, isAnimated:true,
+            gradHeader:'linear-gradient(135deg, #1e3800 0%, #3a6600 45%, #5a9a00 100%)',
+            gradPanel:'linear-gradient(160deg, #0a1a00 0%, #122200 55%, #0a1a00 100%)',
+            gradAccent:'linear-gradient(90deg, #a8ff3e 0%, #d4ff80 40%, #ffdd57 70%, #a8ff3e 100%)',
+            gradBtn:'linear-gradient(135deg, #1e3800 0%, #3a6600 60%, #a8ff3e 100%)',
+            animCSS:`
+@keyframes fcr-fred-walk {
+    0%   { transform: translateX(-120px) scaleX(1); }
+    45%  { transform: translateX(calc(100vw + 120px)) scaleX(1); }
+    46%  { transform: translateX(calc(100vw + 120px)) scaleX(-1); }
+    95%  { transform: translateX(-120px) scaleX(-1); }
+    96%  { transform: translateX(-120px) scaleX(1); }
+    100% { transform: translateX(-120px) scaleX(1); }
+}
+@keyframes fcr-fred-walk2 {
+    0%   { transform: translateX(-100px) scaleX(1); }
+    45%  { transform: translateX(calc(100vw + 100px)) scaleX(1); }
+    46%  { transform: translateX(calc(100vw + 100px)) scaleX(-1); }
+    95%  { transform: translateX(-100px) scaleX(-1); }
+    96%  { transform: translateX(-100px) scaleX(1); }
+    100% { transform: translateX(-100px) scaleX(1); }
+}
+@keyframes fcr-fred-walk3 {
+    0%   { transform: translateX(-80px) scaleX(-1); }
+    45%  { transform: translateX(calc(100vw + 80px)) scaleX(-1); }
+    46%  { transform: translateX(calc(100vw + 80px)) scaleX(1); }
+    95%  { transform: translateX(-80px) scaleX(1); }
+    96%  { transform: translateX(-80px) scaleX(-1); }
+    100% { transform: translateX(-80px) scaleX(-1); }
+}
+@keyframes fcr-fred-fly {
+    0%   { transform: translateX(-80px) translateY(0px) scaleX(1); }
+    20%  { transform: translateX(25vw) translateY(-30px) scaleX(1); }
+    45%  { transform: translateX(calc(100vw + 80px)) translateY(10px) scaleX(1); }
+    46%  { transform: translateX(calc(100vw + 80px)) translateY(10px) scaleX(-1); }
+    70%  { transform: translateX(60vw) translateY(-20px) scaleX(-1); }
+    95%  { transform: translateX(-80px) translateY(0px) scaleX(-1); }
+    96%  { transform: translateX(-80px) translateY(0px) scaleX(1); }
+    100% { transform: translateX(-80px) translateY(0px) scaleX(1); }
+}
+@keyframes fcr-fred-bg-shift {
+    0%,100% { background-position: 0% 50%; }
+    50%      { background-position: 100% 50%; }
+}
+@keyframes fcr-fred-glow {
+    0%,100% { box-shadow: 0 0 8px #a8ff3e33, 0 0 18px #5a9a0011; }
+    50%      { box-shadow: 0 0 22px #a8ff3e77, 0 0 44px #ffdd5733; }
+}
+@keyframes fcr-fred-text-glow {
+    0%,100% { text-shadow: 0 0 6px #a8ff3ecc, 0 0 16px #a8ff3e66; }
+    50%      { text-shadow: 0 0 14px #ffdd57cc, 0 0 32px #ffdd5766; }
+}
+.fcr-fred-dino {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9997;
+    line-height: 1;
+    filter: drop-shadow(0 0 5px #a8ff3e66);
+}
+body, #side-bar {
+    background: linear-gradient(160deg, #0a1a00, #162800, #0a1a00, #0f2200, #0a1a00) !important;
+    background-size: 400% 400% !important;
+    animation: fcr-fred-bg-shift 18s ease infinite !important;
+    position: relative !important;
+    overflow-x: hidden !important;
+}
+body::before {
+    content: '🦕';
+    position: fixed;
+    bottom: 2px;
+    left: 0;
+    font-size: 42px;
+    pointer-events: none;
+    z-index: 9997;
+    animation: fcr-fred-walk 11s linear infinite;
+    line-height: 1;
+    filter: drop-shadow(0 0 8px #a8ff3e99);
+}
+body::after {
+    content: '🦖';
+    position: fixed;
+    bottom: 2px;
+    left: 0;
+    font-size: 28px;
+    pointer-events: none;
+    z-index: 9996;
+    opacity: 0.85;
+    animation: fcr-fred-walk2 16s linear 4s infinite;
+    filter: drop-shadow(0 0 5px #ffdd5766);
+}
+#fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel {
+    animation: fcr-fred-glow 4s ease-in-out infinite !important;
+}
+#hazmat-fcr-header, #fcr-theme-header, #fcr-module-header {
+    background: linear-gradient(135deg, #1e3800, #3a6600, #5a9a00, #3a6600, #1e3800) !important;
+    background-size: 300% 300% !important;
+    animation: fcr-fred-bg-shift 10s ease infinite !important;
+}
+#hazmat-fcr-header-title, #fcr-theme-label, #fcr-module-label {
+    animation: fcr-fred-text-glow 3s ease-in-out infinite !important;
+}
+table.a-bordered tr:first-child th {
+    border-bottom: 2px solid #a8ff3e55 !important;
+    text-shadow: 0 0 8px #a8ff3e88 !important;
+}
+.a-box { border-top-color: #a8ff3e !important; }
+`
+        },
         void_theme: {
             bg1:'#000005', bg2:'#080010', bg3:'#100018',
             accent:'#00ff88', accentDark:'#004433', label:'🌀 Void',
@@ -776,6 +888,7 @@ table.a-bordered tr:first-child th {
         #fcr-theme-btn-sakura   { background:${THEMES.sakura.gradBtn}; color:#ffe4ec; border-color:${THEMES.sakura.accent}; text-shadow:0 1px 2px rgba(0,0,0,0.5); }
         #fcr-theme-btn-cyberpunk { background:${THEMES.cyberpunk.gradBtn}; color:#f9e900; border-color:${THEMES.cyberpunk.accent}; text-shadow:0 0 6px #f9e900aa; }
         #fcr-theme-btn-void_theme { background:${THEMES.void_theme.gradBtn}; color:#00ff88; border-color:${THEMES.void_theme.accent}; text-shadow:0 0 6px #00ff88aa; }
+        #fcr-theme-btn-fred { background:${THEMES.fred.gradBtn}; color:#a8ff3e; border-color:${THEMES.fred.accent}; text-shadow:0 0 6px #a8ff3eaa; }
         /* Module panel theming — suit désormais le thème actif */
         #fcr-module-panel { border-bottom:2px solid ${t.accentDark}; background:${panelBg}; overflow:hidden; }
         #fcr-module-header { display:flex; align-items:center; justify-content:space-between; padding:7px 10px; cursor:pointer; border-bottom:1px solid ${t.accentDark}; user-select:none; transition:background 0.2s; }
@@ -870,6 +983,31 @@ table.a-bordered tr:first-child th {
 
         // Restyle du widget Problem si présent
         if (typeof window._fcrProblemRestyle === 'function') window._fcrProblemRestyle();
+
+        // ── Dinos supplémentaires FRED ──────────────────────────────
+        document.querySelectorAll('.fcr-fred-dino').forEach(el => el.remove());
+        if (themeName === 'fred') {
+            // Ptérodactyle volant (haut de page)
+            const ptero = document.createElement('div');
+            ptero.className = 'fcr-fred-dino';
+            ptero.textContent = '🦅';
+            ptero.style.cssText = 'top:60px; left:0; font-size:26px; animation: fcr-fred-fly 19s linear 2s infinite;';
+            document.body.appendChild(ptero);
+
+            // Petit 🦕 rapide au sol
+            const dino3 = document.createElement('div');
+            dino3.className = 'fcr-fred-dino';
+            dino3.textContent = '🦕';
+            dino3.style.cssText = 'bottom:2px; left:0; font-size:20px; opacity:0.7; animation: fcr-fred-walk3 8s linear 1s infinite; filter: drop-shadow(0 0 4px #ffdd5766);';
+            document.body.appendChild(dino3);
+
+            // 🦖 T-Rex plus lent en arrière-plan
+            const trex = document.createElement('div');
+            trex.className = 'fcr-fred-dino';
+            trex.textContent = '🦖';
+            trex.style.cssText = 'bottom:2px; left:0; font-size:50px; opacity:0.25; animation: fcr-fred-walk2 22s linear 7s infinite; z-index:9994;';
+            document.body.appendChild(trex);
+        }
     }
 
     applyTheme(currentTheme);
