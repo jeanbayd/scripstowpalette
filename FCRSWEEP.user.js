@@ -418,6 +418,139 @@ body::after {
     text-shadow: 0 0 8px #ffb7c5aa, 0 0 20px #ff6b9566 !important;
 }`
         },
+        ophe: {
+            bg1:'#fff0f5', bg2:'#ffe4ee', bg3:'#ffd6e7',
+            accent:'#e75480', accentDark:'#b03060', label:'🌸 Ophé',
+            prepBg:'#ffe4ee', prepNoPrep:'#e75480', prepYes:'#c77dff',
+            isGradient:true, isAnimated:true,
+            gradHeader:'linear-gradient(135deg, #ffd6e7 0%, #ffadd6 45%, #f9a8d4 100%)',
+            gradPanel:'linear-gradient(160deg, #fff0f5 0%, #ffe4ee 55%, #fff0f5 100%)',
+            gradAccent:'linear-gradient(90deg, #f9a8d4 0%, #fcd5e8 40%, #e9b8d3 70%, #f9a8d4 100%)',
+            gradBtn:'linear-gradient(135deg, #ffd6e7 0%, #f9a8d4 60%, #e75480 100%)',
+            animCSS:`
+@keyframes fcr-ophe-fall {
+    0%   { transform: translateY(-60px) rotate(0deg) scale(0.8); opacity: 0; }
+    8%   { opacity: 1; }
+    90%  { opacity: 0.8; }
+    100% { transform: translateY(110vh) rotate(300deg) scale(1.1); opacity: 0; }
+}
+@keyframes fcr-ophe-sway {
+    0%,100% { margin-left: 0px; }
+    30%      { margin-left: 28px; }
+    70%      { margin-left: -18px; }
+}
+@keyframes fcr-ophe-float {
+    0%,100% { transform: translateY(0px) rotate(-2deg); }
+    50%      { transform: translateY(-12px) rotate(2deg); }
+}
+@keyframes fcr-ophe-bg-shift {
+    0%,100% { background-position: 0% 50%; }
+    50%      { background-position: 100% 50%; }
+}
+@keyframes fcr-ophe-glow {
+    0%,100% { box-shadow: 0 0 10px #f9a8d444, 0 0 22px #ffd6e722; }
+    50%      { box-shadow: 0 0 22px #f9a8d4aa, 0 0 44px #ffd6e766; }
+}
+.fcr-ophe-petal {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9996;
+    line-height: 1;
+}
+body, #side-bar {
+    background: linear-gradient(160deg, #fff0f5, #ffe4ee, #fff0f5, #ffd6e7, #fff0f5) !important;
+    background-size: 400% 400% !important;
+    animation: fcr-ophe-bg-shift 16s ease infinite !important;
+    position: relative !important;
+    overflow-x: hidden !important;
+}
+body::before {
+    content: '🌸';
+    position: fixed;
+    top: -60px;
+    left: 8%;
+    font-size: 14px;
+    pointer-events: none;
+    z-index: 9997;
+    animation: fcr-ophe-fall 8s linear infinite, fcr-ophe-sway 3.5s ease-in-out infinite;
+    opacity: 0.9;
+    filter: drop-shadow(0 0 4px #f9a8d499);
+}
+body::after {
+    content: '🌸';
+    position: fixed;
+    top: -60px;
+    left: 62%;
+    font-size: 10px;
+    pointer-events: none;
+    z-index: 9997;
+    animation: fcr-ophe-fall 11s linear 4s infinite, fcr-ophe-sway 4.5s ease-in-out 1s infinite;
+    opacity: 0.7;
+    filter: drop-shadow(0 0 3px #fcd5e899);
+}
+#fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel {
+    animation: fcr-ophe-glow 4s ease-in-out infinite !important;
+    border-color: #f9a8d488 !important;
+}
+#hazmat-fcr-header, #fcr-theme-header, #fcr-module-header {
+    background: linear-gradient(135deg, #ffd6e7, #ffadd6, #f9a8d4, #ffadd6, #ffd6e7) !important;
+    background-size: 300% 300% !important;
+    animation: fcr-ophe-bg-shift 9s ease infinite !important;
+}
+#hazmat-fcr-header-title, #fcr-theme-label, #fcr-module-label {
+    color: #b03060 !important;
+    text-shadow: 0 0 8px #f9a8d4aa, 0 0 18px #ffd6e766 !important;
+}
+/* Override dark text for light theme */
+#fcr-theme-panel, #fcr-module-panel {
+    color: #6b2040 !important;
+}
+#fcr-theme-body .fcr-theme-btn {
+    color: #6b2040 !important;
+    border-color: #f9a8d4 !important;
+}
+#fcr-theme-body .fcr-theme-btn:hover {
+    background: #ffd6e7 !important;
+}
+#fcr-module-panel .fcr-module-row-label { color: #6b2040 !important; }
+table.a-bordered tr:first-child th {
+    border-bottom: 2px solid #f9a8d477 !important;
+    text-shadow: 0 0 8px #f9a8d499 !important;
+}
+.a-box { border-top-color: #f9a8d4 !important; }
+/* Correction texte gris/blanc illisible sur fond pastel */
+body, #side-bar, .p, .a-popover-inner, body a,
+.a-box, .a-cal-na, #fcrp_cfg, table.a-keyvalue th,
+.custom-context-menu, .custom-context-menu .menu-item,
+.barcodes_panel, .barcodes_panel > p,
+#disposition-filter, #consumer-filter, #container-filter, #bin-check-comment {
+    color: #3a1a2e !important;
+}
+/* Titre "Stock" et titres de section (blanc codé en dur) */
+.a-box-title .a-box-inner, .a-popover-header, .aui-nav-row {
+    color: #3a1a2e !important;
+}
+/* Champ de recherche */
+.a-search input {
+    color: #3a1a2e !important;
+    background-color: #fff0f5 !important;
+    border: 1px solid #f9a8d4 !important;
+}
+.a-search input::placeholder {
+    color: #b06080 !important;
+    opacity: 1 !important;
+}
+#fcr-theme-panel, #fcr-module-panel {
+    color: #3a1a2e !important;
+}
+#fcr-module-panel .fcr-module-row-label {
+    color: #3a1a2e !important;
+}
+#fcr-theme-body .fcr-theme-btn {
+    color: #3a1a2e !important;
+}
+`
+        },
         cyberpunk: {
             bg1:'#070010', bg2:'#0d001f', bg3:'#14002e',
             accent:'#f9e900', accentDark:'#6b5f00', label:'⚡ Cyberpunk',
@@ -615,215 +748,6 @@ table.a-bordered tr:first-child th {
 .a-box { border-top-color: #a8ff3e !important; }
 `
         },
-        atlantis: {
-            bg1:'#000d1a', bg2:'#001833', bg3:'#002b55',
-            accent:'#00d4ff', accentDark:'#005577', label:'🌊 Atlantis',
-            prepBg:'#001833', prepNoPrep:'#ff6b6b', prepYes:'#00d4ff',
-            isGradient:true, isAnimated:true,
-            gradHeader:'linear-gradient(135deg, #002b55 0%, #005577 45%, #007799 100%)',
-            gradPanel:'linear-gradient(160deg, #000d1a 0%, #001833 55%, #000d1a 100%)',
-            gradAccent:'linear-gradient(90deg, #00d4ff 0%, #00ffcc 40%, #7be0ff 70%, #00d4ff 100%)',
-            gradBtn:'linear-gradient(135deg, #002b55 0%, #005577 60%, #00d4ff 100%)',
-            animCSS:`
-@keyframes fcr-atl-swim {
-    0%   { transform: translateX(-100px) scaleX(1); }
-    48%  { transform: translateX(calc(100vw + 100px)) scaleX(1); }
-    49%  { transform: translateX(calc(100vw + 100px)) scaleX(-1); }
-    97%  { transform: translateX(-100px) scaleX(-1); }
-    98%  { transform: translateX(-100px) scaleX(1); }
-    100% { transform: translateX(-100px) scaleX(1); }
-}
-@keyframes fcr-atl-swim2 {
-    0%   { transform: translateX(-80px) scaleX(-1); }
-    48%  { transform: translateX(calc(100vw + 80px)) scaleX(-1); }
-    49%  { transform: translateX(calc(100vw + 80px)) scaleX(1); }
-    97%  { transform: translateX(-80px) scaleX(1); }
-    98%  { transform: translateX(-80px) scaleX(-1); }
-    100% { transform: translateX(-80px) scaleX(-1); }
-}
-@keyframes fcr-atl-wave {
-    0%,100% { transform: translateX(-100px) translateY(0px) scaleX(1); }
-    25%      { transform: translateX(25vw) translateY(-18px) scaleX(1); }
-    50%      { transform: translateX(calc(100vw + 100px)) translateY(0px) scaleX(1); }
-    51%      { transform: translateX(calc(100vw + 100px)) translateY(0px) scaleX(-1); }
-    75%      { transform: translateX(60vw) translateY(-12px) scaleX(-1); }
-    99%      { transform: translateX(-100px) translateY(0px) scaleX(-1); }
-}
-@keyframes fcr-atl-bg {
-    0%,100% { background-position: 0% 50%; }
-    50%      { background-position: 100% 50%; }
-}
-@keyframes fcr-atl-glow {
-    0%,100% { box-shadow: 0 0 8px #00d4ff33, 0 0 18px #00779911; }
-    50%      { box-shadow: 0 0 22px #00d4ff77, 0 0 44px #00ffcc33; }
-}
-@keyframes fcr-atl-text {
-    0%,100% { text-shadow: 0 0 6px #00d4ffcc, 0 0 16px #00d4ff66; }
-    50%      { text-shadow: 0 0 14px #00ffcccc, 0 0 32px #00ffcc66; }
-}
-@keyframes fcr-atl-bubble {
-    0%   { transform: translateY(100vh) scale(0.5); opacity: 0; }
-    10%  { opacity: 0.6; }
-    90%  { opacity: 0.3; }
-    100% { transform: translateY(-60px) scale(1.2); opacity: 0; }
-}
-.fcr-atl-creature {
-    position: fixed;
-    pointer-events: none;
-    line-height: 1;
-}
-body, #side-bar {
-    background: linear-gradient(160deg, #000d1a, #001833, #000d1a, #001022, #000d1a) !important;
-    background-size: 400% 400% !important;
-    animation: fcr-atl-bg 20s ease infinite !important;
-    position: relative !important;
-    overflow-x: hidden !important;
-}
-body::before {
-    content: '🐠';
-    position: fixed;
-    top: 40%;
-    left: 0;
-    font-size: 30px;
-    pointer-events: none;
-    z-index: 9997;
-    animation: fcr-atl-swim 13s linear infinite;
-    filter: drop-shadow(0 0 6px #00d4ff88);
-}
-body::after {
-    content: '🐟';
-    position: fixed;
-    top: 60%;
-    left: 0;
-    font-size: 20px;
-    pointer-events: none;
-    z-index: 9996;
-    opacity: 0.8;
-    animation: fcr-atl-swim2 9s linear 3s infinite;
-    filter: drop-shadow(0 0 4px #00ffcc66);
-}
-#fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel {
-    animation: fcr-atl-glow 4s ease-in-out infinite !important;
-}
-#hazmat-fcr-header, #fcr-theme-header, #fcr-module-header {
-    background: linear-gradient(135deg, #002b55, #005577, #007799, #005577, #002b55) !important;
-    background-size: 300% 300% !important;
-    animation: fcr-atl-bg 10s ease infinite !important;
-}
-#hazmat-fcr-header-title, #fcr-theme-label, #fcr-module-label {
-    animation: fcr-atl-text 3s ease-in-out infinite !important;
-}
-table.a-bordered tr:first-child th {
-    border-bottom: 2px solid #00d4ff55 !important;
-    text-shadow: 0 0 8px #00d4ff88 !important;
-}
-.a-box { border-top-color: #00d4ff !important; }
-`
-        },
-        halloween: {
-            bg1:'#0a0010', bg2:'#130020', bg3:'#1e0030',
-            accent:'#ff7700', accentDark:'#7a3300', label:'🎃 Halloween',
-            prepBg:'#130020', prepNoPrep:'#ff3366', prepYes:'#ff7700',
-            isGradient:true, isAnimated:true,
-            gradHeader:'linear-gradient(135deg, #1e0030 0%, #3a0060 45%, #5a0080 100%)',
-            gradPanel:'linear-gradient(160deg, #0a0010 0%, #130020 55%, #0a0010 100%)',
-            gradAccent:'linear-gradient(90deg, #ff7700 0%, #ff4400 40%, #cc00ff 70%, #ff7700 100%)',
-            gradBtn:'linear-gradient(135deg, #1e0030 0%, #5a0050 60%, #ff7700 100%)',
-            animCSS:`
-@keyframes fcr-hal-bat {
-    0%   { transform: translateX(-60px) translateY(0px) scaleX(1); }
-    15%  { transform: translateX(20vw) translateY(-40px) scaleX(1); }
-    30%  { transform: translateX(40vw) translateY(10px) scaleX(1); }
-    45%  { transform: translateX(calc(100vw + 60px)) translateY(-20px) scaleX(1); }
-    46%  { transform: translateX(calc(100vw + 60px)) translateY(-20px) scaleX(-1); }
-    60%  { transform: translateX(70vw) translateY(15px) scaleX(-1); }
-    80%  { transform: translateX(30vw) translateY(-30px) scaleX(-1); }
-    99%  { transform: translateX(-60px) translateY(0px) scaleX(-1); }
-    100% { transform: translateX(-60px) translateY(0px) scaleX(1); }
-}
-@keyframes fcr-hal-bat2 {
-    0%   { transform: translateX(calc(100vw + 50px)) scaleX(-1); }
-    48%  { transform: translateX(-80px) scaleX(-1); }
-    49%  { transform: translateX(-80px) scaleX(1); }
-    97%  { transform: translateX(calc(100vw + 50px)) scaleX(1); }
-    98%  { transform: translateX(calc(100vw + 50px)) scaleX(-1); }
-    100% { transform: translateX(calc(100vw + 50px)) scaleX(-1); }
-}
-@keyframes fcr-hal-ghost {
-    0%   { opacity: 0; transform: translateY(20px); }
-    10%  { opacity: 0.7; transform: translateY(0px); }
-    80%  { opacity: 0.7; transform: translateY(-10px); }
-    100% { opacity: 0; transform: translateY(-30px); }
-}
-@keyframes fcr-hal-pumpkin {
-    0%,100% { transform: scale(1) rotate(-3deg); filter: drop-shadow(0 0 8px #ff770099); }
-    50%      { transform: scale(1.05) rotate(3deg); filter: drop-shadow(0 0 18px #ff7700cc); }
-}
-@keyframes fcr-hal-bg {
-    0%,100% { background-position: 0% 50%; }
-    50%      { background-position: 100% 50%; }
-}
-@keyframes fcr-hal-glow {
-    0%,100% { box-shadow: 0 0 8px #ff770033, 0 0 18px #cc00ff11; }
-    50%      { box-shadow: 0 0 22px #ff770077, 0 0 44px #cc00ff33; }
-}
-@keyframes fcr-hal-text {
-    0%,100% { text-shadow: 0 0 6px #ff7700cc, 0 0 16px #ff770066; }
-    50%      { text-shadow: 0 0 14px #cc00ffcc, 0 0 32px #cc00ff66; }
-}
-.fcr-hal-creature {
-    position: fixed;
-    pointer-events: none;
-    line-height: 1;
-}
-body, #side-bar {
-    background: linear-gradient(160deg, #0a0010, #130020, #0a0010, #100018, #0a0010) !important;
-    background-size: 400% 400% !important;
-    animation: fcr-hal-bg 16s ease infinite !important;
-    position: relative !important;
-    overflow-x: hidden !important;
-}
-body::before {
-    content: '🦇';
-    position: fixed;
-    top: 25%;
-    left: 0;
-    font-size: 28px;
-    pointer-events: none;
-    z-index: 9997;
-    animation: fcr-hal-bat 10s linear infinite;
-    filter: drop-shadow(0 0 6px #cc00ff88);
-}
-body::after {
-    content: '🦇';
-    position: fixed;
-    top: 55%;
-    left: 0;
-    font-size: 18px;
-    pointer-events: none;
-    z-index: 9996;
-    opacity: 0.75;
-    animation: fcr-hal-bat2 7s linear 2s infinite;
-    filter: drop-shadow(0 0 4px #ff770066);
-}
-#fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel {
-    animation: fcr-hal-glow 3s ease-in-out infinite !important;
-}
-#hazmat-fcr-header, #fcr-theme-header, #fcr-module-header {
-    background: linear-gradient(135deg, #1e0030, #3a0060, #5a0080, #3a0060, #1e0030) !important;
-    background-size: 300% 300% !important;
-    animation: fcr-hal-bg 8s ease infinite !important;
-}
-#hazmat-fcr-header-title, #fcr-theme-label, #fcr-module-label {
-    animation: fcr-hal-text 3s ease-in-out infinite !important;
-}
-table.a-bordered tr:first-child th {
-    border-bottom: 2px solid #ff770055 !important;
-    text-shadow: 0 0 8px #ff770088 !important;
-}
-.a-box { border-top-color: #ff7700 !important; }
-`
-        },
         blizzard: {
             bg1:'#010a14', bg2:'#021828', bg3:'#032a44',
             accent:'#a8e4ff', accentDark:'#1a5577', label:'❄️ Blizzard',
@@ -922,105 +846,6 @@ table.a-bordered tr:first-child th {
     text-shadow: 0 0 8px #a8e4ff88 !important;
 }
 .a-box { border-top-color: #a8e4ff !important; }
-`
-        },
-        deepspace: {
-            bg1:'#000008', bg2:'#00000f', bg3:'#000018',
-            accent:'#ffffff', accentDark:'#333366', label:'🚀 Deep Space',
-            prepBg:'#00000f', prepNoPrep:'#ff4466', prepYes:'#aaaaff',
-            isGradient:true, isAnimated:true,
-            gradHeader:'linear-gradient(135deg, #000018 0%, #110033 45%, #220055 100%)',
-            gradPanel:'linear-gradient(160deg, #000008 0%, #00000f 55%, #000008 100%)',
-            gradAccent:'linear-gradient(90deg, #ffffff 0%, #aaaaff 40%, #ffaaff 70%, #ffffff 100%)',
-            gradBtn:'linear-gradient(135deg, #000018 0%, #220055 60%, #7755ff 100%)',
-            animCSS:`
-@keyframes fcr-space-comet {
-    0%   { transform: translate(-100px, -50px) rotate(35deg); opacity: 0; }
-    5%   { opacity: 1; }
-    95%  { opacity: 1; }
-    100% { transform: translate(calc(100vw + 100px), calc(100vh + 50px)) rotate(35deg); opacity: 0; }
-}
-@keyframes fcr-space-comet2 {
-    0%   { transform: translate(calc(100vw + 80px), -40px) rotate(-35deg); opacity: 0; }
-    5%   { opacity: 0.8; }
-    95%  { opacity: 0.8; }
-    100% { transform: translate(-80px, calc(100vh + 40px)) rotate(-35deg); opacity: 0; }
-}
-@keyframes fcr-space-ufo {
-    0%   { transform: translateX(-80px) translateY(0px) scaleX(1); }
-    20%  { transform: translateX(25vw) translateY(-30px) scaleX(1); }
-    40%  { transform: translateX(55vw) translateY(20px) scaleX(1); }
-    48%  { transform: translateX(calc(100vw + 80px)) translateY(-10px) scaleX(1); }
-    49%  { transform: translateX(calc(100vw + 80px)) translateY(-10px) scaleX(-1); }
-    70%  { transform: translateX(50vw) translateY(15px) scaleX(-1); }
-    95%  { transform: translateX(-80px) translateY(0px) scaleX(-1); }
-    96%  { transform: translateX(-80px) translateY(0px) scaleX(1); }
-    100% { transform: translateX(-80px) translateY(0px) scaleX(1); }
-}
-@keyframes fcr-space-star {
-    0%,100% { opacity: 0.2; transform: scale(0.8); }
-    50%      { opacity: 1; transform: scale(1.2); }
-}
-@keyframes fcr-space-bg {
-    0%,100% { background-position: 0% 50%; }
-    50%      { background-position: 100% 50%; }
-}
-@keyframes fcr-space-glow {
-    0%,100% { box-shadow: 0 0 8px #ffffff22, 0 0 18px #7755ff11; }
-    50%      { box-shadow: 0 0 22px #aaaaff66, 0 0 44px #7755ff33; }
-}
-@keyframes fcr-space-text {
-    0%,100% { text-shadow: 0 0 6px #ffffffcc, 0 0 16px #aaaaff66; }
-    50%      { text-shadow: 0 0 14px #ffaaffcc, 0 0 32px #ffaaff66; }
-}
-.fcr-space-obj {
-    position: fixed;
-    pointer-events: none;
-    line-height: 1;
-}
-body, #side-bar {
-    background: #000008 !important;
-    position: relative !important;
-    overflow-x: hidden !important;
-}
-body::before {
-    content: '☄️';
-    position: fixed;
-    top: 10%;
-    left: 0;
-    font-size: 24px;
-    pointer-events: none;
-    z-index: 9997;
-    animation: fcr-space-comet 6s linear infinite;
-    filter: drop-shadow(0 0 8px #ffffffaa);
-}
-body::after {
-    content: '🛸';
-    position: fixed;
-    top: 45%;
-    left: 0;
-    font-size: 28px;
-    pointer-events: none;
-    z-index: 9997;
-    animation: fcr-space-ufo 18s linear 3s infinite;
-    filter: drop-shadow(0 0 8px #aaaaff99);
-}
-#fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel {
-    animation: fcr-space-glow 4s ease-in-out infinite !important;
-}
-#hazmat-fcr-header, #fcr-theme-header, #fcr-module-header {
-    background: linear-gradient(135deg, #000018, #110033, #220055, #110033, #000018) !important;
-    background-size: 300% 300% !important;
-    animation: fcr-space-bg 12s ease infinite !important;
-}
-#hazmat-fcr-header-title, #fcr-theme-label, #fcr-module-label {
-    animation: fcr-space-text 3s ease-in-out infinite !important;
-}
-table.a-bordered tr:first-child th {
-    border-bottom: 2px solid #aaaaff55 !important;
-    text-shadow: 0 0 8px #aaaaff88 !important;
-}
-.a-box { border-top-color: #aaaaff !important; }
 `
         },
         safari: {
@@ -1398,10 +1223,8 @@ table.a-bordered tr:first-child th {
         #fcr-theme-btn-cyberpunk { background:${THEMES.cyberpunk.gradBtn}; color:#f9e900; border-color:${THEMES.cyberpunk.accent}; text-shadow:0 0 6px #f9e900aa; }
         #fcr-theme-btn-void_theme { background:${THEMES.void_theme.gradBtn}; color:#00ff88; border-color:${THEMES.void_theme.accent}; text-shadow:0 0 6px #00ff88aa; }
         #fcr-theme-btn-fred { background:${THEMES.fred.gradBtn}; color:#a8ff3e; border-color:${THEMES.fred.accent}; text-shadow:0 0 6px #a8ff3eaa; }
-        #fcr-theme-btn-atlantis { background:${THEMES.atlantis.gradBtn}; color:#00d4ff; border-color:${THEMES.atlantis.accent}; text-shadow:0 0 6px #00d4ffaa; }
-        #fcr-theme-btn-halloween { background:${THEMES.halloween.gradBtn}; color:#ff7700; border-color:${THEMES.halloween.accent}; text-shadow:0 0 6px #ff7700aa; }
         #fcr-theme-btn-blizzard { background:${THEMES.blizzard.gradBtn}; color:#a8e4ff; border-color:${THEMES.blizzard.accent}; text-shadow:0 0 6px #a8e4ffaa; }
-        #fcr-theme-btn-deepspace { background:${THEMES.deepspace.gradBtn}; color:#aaaaff; border-color:#7755ff; text-shadow:0 0 6px #aaaaffaa; }
+        #fcr-theme-btn-ophe { background:${THEMES.ophe.gradBtn}; color:#f9a8d4; border-color:${THEMES.ophe.accent}; text-shadow:0 0 6px #f9a8d4aa; }
         #fcr-theme-btn-safari { background:${THEMES.safari.gradBtn}; color:#ffbb44; border-color:${THEMES.safari.accent}; text-shadow:0 0 6px #ffbb44aa; }
         /* Module panel theming — suit désormais le thème actif */
         #fcr-module-panel { border-bottom:2px solid ${t.accentDark}; background:${panelBg}; overflow:hidden; }
@@ -1520,49 +1343,7 @@ table.a-bordered tr:first-child th {
             document.body.appendChild(trex);
         }
 
-        // ── Créatures ATLANTIS ───────────────────────────────────────
-        document.querySelectorAll('.fcr-atl-creature').forEach(el => el.remove());
-        if (themeName === 'atlantis') {
-            const shark = document.createElement('div');
-            shark.className = 'fcr-atl-creature';
-            shark.textContent = '🦈';
-            shark.style.cssText = 'top:25%; left:0; font-size:36px; z-index:9997; animation: fcr-atl-swim 20s linear 6s infinite; filter: drop-shadow(0 0 8px #00d4ff99);';
-            document.body.appendChild(shark);
 
-            const fish2 = document.createElement('div');
-            fish2.className = 'fcr-atl-creature';
-            fish2.textContent = '🐡';
-            fish2.style.cssText = 'top:70%; left:0; font-size:22px; z-index:9996; opacity:0.7; animation: fcr-atl-wave 15s linear 1s infinite; filter: drop-shadow(0 0 4px #00ffcc66);';
-            document.body.appendChild(fish2);
-
-            const octopus = document.createElement('div');
-            octopus.className = 'fcr-atl-creature';
-            octopus.textContent = '🐙';
-            octopus.style.cssText = 'top:50%; left:0; font-size:28px; z-index:9995; opacity:0.5; animation: fcr-atl-swim2 25s linear 10s infinite;';
-            document.body.appendChild(octopus);
-        }
-
-        // ── Créatures HALLOWEEN ──────────────────────────────────────
-        document.querySelectorAll('.fcr-hal-creature').forEach(el => el.remove());
-        if (themeName === 'halloween') {
-            const ghost = document.createElement('div');
-            ghost.className = 'fcr-hal-creature';
-            ghost.textContent = '👻';
-            ghost.style.cssText = 'top:35%; left:20%; font-size:30px; z-index:9997; animation: fcr-hal-ghost 5s ease-in-out 1s infinite; filter: drop-shadow(0 0 8px #ffffff88);';
-            document.body.appendChild(ghost);
-
-            const ghost2 = document.createElement('div');
-            ghost2.className = 'fcr-hal-creature';
-            ghost2.textContent = '👻';
-            ghost2.style.cssText = 'top:60%; left:70%; font-size:20px; z-index:9996; animation: fcr-hal-ghost 7s ease-in-out 3s infinite; filter: drop-shadow(0 0 6px #cc00ff88);';
-            document.body.appendChild(ghost2);
-
-            const pumpkin = document.createElement('div');
-            pumpkin.className = 'fcr-hal-creature';
-            pumpkin.textContent = '🎃';
-            pumpkin.style.cssText = 'bottom:4px; right:20px; font-size:28px; z-index:9997; animation: fcr-hal-pumpkin 3s ease-in-out infinite; filter: drop-shadow(0 0 10px #ff770099);';
-            document.body.appendChild(pumpkin);
-        }
 
         // ── Flocons BLIZZARD ─────────────────────────────────────────
         document.querySelectorAll('.fcr-bliz-flake').forEach(el => el.remove());
@@ -1588,36 +1369,6 @@ table.a-bordered tr:first-child th {
             document.body.appendChild(polar);
         }
 
-        // ── Objets DEEP SPACE ────────────────────────────────────────
-        document.querySelectorAll('.fcr-space-obj').forEach(el => el.remove());
-        if (themeName === 'deepspace') {
-            const comet2 = document.createElement('div');
-            comet2.className = 'fcr-space-obj';
-            comet2.textContent = '☄️';
-            comet2.style.cssText = 'top:35%; right:0; font-size:18px; z-index:9996; animation: fcr-space-comet2 9s linear 4s infinite; filter: drop-shadow(0 0 6px #ffffffaa); opacity:0.7;';
-            document.body.appendChild(comet2);
-
-            const rocket = document.createElement('div');
-            rocket.className = 'fcr-space-obj';
-            rocket.textContent = '🚀';
-            rocket.style.cssText = 'bottom:10%; left:0; font-size:24px; z-index:9997; animation: fcr-space-comet 14s linear 7s infinite; filter: drop-shadow(0 0 8px #aaaaff99);';
-            document.body.appendChild(rocket);
-
-            const starData = [
-                { top:'15%', left:'10%', delay:'0s' },
-                { top:'40%', left:'80%', delay:'1.5s' },
-                { top:'70%', left:'40%', delay:'3s' },
-                { top:'25%', left:'55%', delay:'2s' },
-                { top:'80%', left:'85%', delay:'0.8s' },
-            ];
-            starData.forEach(s => {
-                const el = document.createElement('div');
-                el.className = 'fcr-space-obj';
-                el.textContent = '⭐';
-                el.style.cssText = `top:${s.top}; left:${s.left}; font-size:10px; z-index:9994; animation: fcr-space-star 2s ease-in-out ${s.delay} infinite; opacity:0.6;`;
-                document.body.appendChild(el);
-            });
-        }
 
         // ── Animaux SAFARI ───────────────────────────────────────────
         document.querySelectorAll('.fcr-saf-animal').forEach(el => el.remove());
@@ -1639,6 +1390,37 @@ table.a-bordered tr:first-child th {
             zebra.textContent = '🦓';
             zebra.style.cssText = 'bottom:2px; left:0; font-size:22px; z-index:9996; opacity:0.75; animation: fcr-saf-walk2 9s linear 3s infinite; filter: drop-shadow(0 0 4px #ffbb4466);';
             document.body.appendChild(zebra);
+        }
+
+        // ── Pétales OPHÉ ─────────────────────────────────────────────
+        document.querySelectorAll('.fcr-ophe-petal').forEach(el => el.remove());
+        if (themeName === 'ophe') {
+            const petalData = [
+                { left:'22%', size:12, delay:'0s',  dur:'9s',  sway:'3s' },
+                { left:'40%', size: 9, delay:'2s',  dur:'7s',  sway:'4s' },
+                { left:'58%', size:14, delay:'5s',  dur:'10s', sway:'3.5s' },
+                { left:'78%', size:10, delay:'1.5s',dur:'8s',  sway:'4.5s' },
+                { left:'90%', size: 8, delay:'3.5s',dur:'11s', sway:'3s' },
+            ];
+            petalData.forEach(p => {
+                const el = document.createElement('div');
+                el.className = 'fcr-ophe-petal';
+                el.textContent = '🌸';
+                el.style.cssText = `top:-60px; left:${p.left}; font-size:${p.size}px; animation: fcr-ophe-fall ${p.dur} linear ${p.delay} infinite, fcr-ophe-sway ${p.sway} ease-in-out ${p.delay} infinite; filter: drop-shadow(0 0 3px #f9a8d488);`;
+                document.body.appendChild(el);
+            });
+
+            const butterfly = document.createElement('div');
+            butterfly.className = 'fcr-ophe-petal';
+            butterfly.textContent = '🦋';
+            butterfly.style.cssText = 'top:30%; left:15%; font-size:22px; z-index:9997; animation: fcr-ophe-float 4s ease-in-out infinite; filter: drop-shadow(0 0 6px #f9a8d499); opacity:0.8;';
+            document.body.appendChild(butterfly);
+
+            const butterfly2 = document.createElement('div');
+            butterfly2.className = 'fcr-ophe-petal';
+            butterfly2.textContent = '🦋';
+            butterfly2.style.cssText = 'top:65%; left:75%; font-size:16px; z-index:9996; animation: fcr-ophe-float 5.5s ease-in-out 2s infinite; filter: drop-shadow(0 0 4px #fcd5e888); opacity:0.65;';
+            document.body.appendChild(butterfly2);
         }
     }
 
