@@ -2765,9 +2765,11 @@ table.a-bordered tr:first-child th {
                 let statusIcon = '✓';
                 if (isLoading) { badgeColor = '#888'; badgeBg = '#f0f0f0'; statusIcon = '⏳'; }
                 else if (!isNaN(levelNum)) {
-                    if (levelNum >= 7) { badgeColor = '#DC3545'; badgeBg = '#fdecea'; statusIcon = '⚠️'; }
-                    else if (levelNum >= 4) { badgeColor = '#E67E22'; badgeBg = '#fff3e0'; statusIcon = '⚠️'; }
-                    else { badgeColor = '#27ae60'; badgeBg = '#e8f5e9'; statusIcon = '✓'; }
+                    if (levelNum === 0)                        { badgeColor = '#DC3545'; badgeBg = '#fdecea'; statusIcon = '🚫'; }
+                    else if (levelNum >= 1 && levelNum <= 4)   { badgeColor = '#27ae60'; badgeBg = '#e8f5e9'; statusIcon = '✓'; }
+                    else if (levelNum === 5)                   { badgeColor = '#E67E22'; badgeBg = '#fff3e0'; statusIcon = '⚠️'; }
+                    else if (levelNum === 6)                   { badgeColor = '#DC3545'; badgeBg = '#fdecea'; statusIcon = '🚫'; }
+                    else                                       { badgeColor = '#DC3545'; badgeBg = '#fdecea'; statusIcon = '🚫'; }
                 } else if (hazmatLevel === 'Non trouvé' || hazmatLevel === 'Erreur de chargement') {
                     badgeColor = '#888'; badgeBg = '#f0f0f0'; statusIcon = '✗';
                 }
@@ -2806,11 +2808,21 @@ table.a-bordered tr:first-child th {
 
                 const info = document.createElement('div');
                 info.style.cssText = 'flex:1;';
+
+                // Couleur du lastinLevel selon les mêmes règles
+                const lastinNum = parseInt(lastinLevel);
+                let lastinColor = '#666';
+                if (!isNaN(lastinNum)) {
+                    if (lastinNum === 0 || lastinNum === 6)            lastinColor = '#DC3545';
+                    else if (lastinNum >= 1 && lastinNum <= 4)         lastinColor = '#27ae60';
+                    else if (lastinNum === 5)                          lastinColor = '#E67E22';
+                }
+
                 info.innerHTML = `
                     <div style="font-size:14px;font-weight:700;color:${badgeColor};display:flex;align-items:center;gap:8px;">
                         <span>${statusIcon}</span>
                         <span>Niveau ${hazmatLevel}</span>
-                        ${lastinLevel ? `<span style="font-size:11px;color:#666;font-weight:400;">&nbsp;·&nbsp;LASTIN: ${lastinLevel}</span>` : ''}
+                        ${lastinLevel ? `<span style="font-size:11px;color:${lastinColor};font-weight:600;">&nbsp;·&nbsp;Last In: ${lastinLevel}</span>` : ''}
                         ${pcApproved ? `<span style="font-size:11px;color:#666;font-weight:400;">&nbsp;·&nbsp;PC Approved: ${pcApproved}</span>` : ''}
                     </div>
                     ${lastinMessage && !isLoading ? `
