@@ -22,6 +22,7 @@
 // @connect      fcresearch-na.aka.amazon.com
 // @connect      aft-sherlock.eu.aftx.amazonoperations.app
 // @connect      qi-fcresearch-eu.corp.amazon.com
+// @connect      rodeo-dub.amazon.com
 // @connect      localhost
 // @require      https://code.jquery.com/jquery-3.6.0.min.js
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js
@@ -3731,5 +3732,241 @@ table.a-bordered tr:first-child th {
         setTimeout(etiq2_buildPanel, 1000);
     }
 
+    // ════════════════════════════════════════════════════════════════
+    // ===== TRANSSHIPMENT DESTINATION TOOLTIP =====
+    // ════════════════════════════════════════════════════════════════
+    (function initTransshipmentTooltip() {
+
+        // ── Tooltip DOM ──────────────────────────────────────────────
+        const tooltip = document.createElement('div');
+        tooltip.id = 'fcr-tship-tooltip';
+        tooltip.style.cssText = `
+            position: fixed;
+            z-index: 99999;
+            display: none;
+            min-width: 180px;
+            max-width: 280px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            pointer-events: none;
+            box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+            border: 1px solid;
+            transition: opacity 0.15s;
+        `;
+        document.body.appendChild(tooltip);
+
+        // Cache pour éviter les appels répétés (conteneur → destination)
+        const rodeoCache = {};
+
+        // ── Style selon thème actif ──────────────────────────────────
+        function getTooltipStyle() {
+            const t = THEMES[GM_getValue('fcr-theme', 'base')];
+            if (!t || t.isBase) {
+                return {
+                    bg: '#1a1a2e', border: '#4a6fa5', text: '#e8eaf6',
+                    accent: '#7eb3ff', subtext: '#9ab0cc'
+                };
+            }
+            return {
+                bg: t.bg2 || '#1a1a2e',
+                border: t.accent || '#4a6fa5',
+                text: '#e8eaf6',
+                accent: t.accent || '#7eb3ff',
+                subtext: '#9ab0cc'
+            };
+        }
+
+        function showTooltip(x, y, content) {
+            const s = getTooltipStyle();
+            tooltip.style.background = s.bg;
+            tooltip.style.borderColor = s.border;
+            tooltip.style.color = s.text;
+            tooltip.innerHTML = content;
+            tooltip.style.display = 'block';
+            // Positionnement : évite les débordements
+            const tw = tooltip.offsetWidth || 200;
+            const th = tooltip.offsetHeight || 80;
+            let left = x + 14;
+            let top  = y - 10;
+            if (left + tw > window.innerWidth  - 10) left = x - tw - 14;
+            if (top  + th > window.innerHeight - 10) top  = window.innerHeight - th - 10;
+            if (top < 6) top = 6;
+            tooltip.style.left = left + 'px';
+            tooltip.style.top  = top  + 'px';
+        }
+
+        function hideTooltip() {
+            tooltip.style.display = 'none';
+        }
+
+        // ── Appel Rodeo ──────────────────────────────────────────────
+        function fetchRodeoDestination(container, onSuccess, onError) {
+            if (rodeoCache[container] !== undefined) {
+                onSuccess(rodeoCache[container]);
+                return;
+            }
+            const warehouseId = $.cookie('fcmenu-warehouseId') || getFCFromURL() || 'ETZ2';
+            const url = `https://rodeo-dub.amazon.com/${warehouseId}/Search?searchKey=${encodeURIComponent(container)}`;
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: url,
+                onload: function(resp) {
+                    try {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(resp.responseText, 'text/html');
+                        // Cherche la colonne "Identifiant de l'entrepôt de destination"
+                        // dans toutes les tables du résultat Rodeo
+                        let destination = null;
+                        const headers = doc.querySelectorAll('th');
+                        headers.forEach(th => {
+                            const text = th.textContent.trim().toLowerCase();
+                            if (text.includes('destination') || text.includes('entrepôt de destination') || text.includes('destination warehouse')) {
+                                const table = th.closest('table');
+                                if (!table) return;
+                                const colIndex = Array.from(th.parentElement.children).indexOf(th);
+                                const firstRow = table.querySelector('tbody tr');
+                                if (firstRow) {
+                                    const cell = firstRow.children[colIndex];
+                                    if (cell) destination = cell.textContent.trim();
+                                }
+                            }
+                        });
+                        // Fallback : cherche un pattern FC (3-4 lettres majuscules + 1 chiffre)
+                        if (!destination) {
+                            const match = resp.responseText.match(/\b([A-Z]{3,4}[0-9])\b/);
+                            if (match) destination = match[1];
+                        }
+                        rodeoCache[container] = destination || null;
+                        onSuccess(destination);
+                    } catch(e) {
+                        onError('Erreur de parsing');
+                    }
+                },
+                onerror: function() { onError('Erreur réseau'); }
+            });
+        }
+
+        // ── Construction du HTML tooltip ─────────────────────────────
+        function buildTooltipHTML(container, destination) {
+            const s = getTooltipStyle();
+            const warehouseId = $.cookie('fcmenu-warehouseId') || getFCFromURL() || 'ETZ2';
+            const rodeoUrl = `https://rodeo-dub.amazon.com/${warehouseId}/Search?searchKey=${encodeURIComponent(container)}`;
+            if (destination) {
+                return `
+                    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:${s.accent};margin-bottom:6px;">
+                        🚚 Destination TRANSSHIPMENT
+                    </div>
+                    <div style="font-size:18px;font-weight:800;color:${s.accent};letter-spacing:1px;margin-bottom:8px;">
+                        ${destination}
+                    </div>
+                    `;
+            }
+        }
+
+        function buildLoadingHTML(container) {
+            const s = getTooltipStyle();
+            return `
+                <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:${s.accent};margin-bottom:6px;">
+                    🚚 Destination TRANSSHIPMENT
+                </div>
+                <div style="font-size:12px;color:${s.subtext};">
+                    ⏳ Recherche en cours…
+                </div>
+                `;
+        }
+
+        // ── Attache les événements sur chaque cellule TRANSSHIPMENT ──
+        function attachTransshipmentHover(row) {
+            const cells = row.querySelectorAll('td');
+            if (!cells.length) return;
+
+            // Colonne 0 = Conteneur (texte du lien ou texte direct)
+            const containerCell = cells[0];
+            const containerLink = containerCell ? containerCell.querySelector('a') : null;
+            const container = containerLink
+                ? containerLink.textContent.trim()
+                : (containerCell ? containerCell.textContent.trim() : null);
+            if (!container || !container.match(/^ts[A-Z0-9]/i)) return;
+
+            // Cherche la cellule TRANSSHIPMENT dans la ligne
+            cells.forEach(cell => {
+                if (cell.dataset.tshipHover) return; // déjà traité
+                const text = cell.textContent.trim();
+                if (text !== 'TRANSSHIPMENT') return;
+
+                cell.dataset.tshipHover = '1';
+                cell.style.cursor = 'help';
+
+                let hoverTimer = null;
+                let mouseX = 0, mouseY = 0;
+
+                cell.addEventListener('mouseenter', function(e) {
+                    mouseX = e.clientX;
+                    mouseY = e.clientY;
+                    hoverTimer = setTimeout(() => {
+                        // Affiche immédiatement "chargement" si pas en cache
+                        if (rodeoCache[container] !== undefined) {
+                            showTooltip(mouseX, mouseY, buildTooltipHTML(container, rodeoCache[container]));
+                        } else {
+                            showTooltip(mouseX, mouseY, buildLoadingHTML(container));
+                            fetchRodeoDestination(container,
+                                (dest) => {
+                                    if (tooltip.style.display !== 'none') {
+                                        showTooltip(mouseX, mouseY, buildTooltipHTML(container, dest));
+                                    }
+                                },
+                                (err) => {
+                                    if (tooltip.style.display !== 'none') {
+                                        const s = getTooltipStyle();
+                                        showTooltip(mouseX, mouseY, `<div style="color:#ff6b6b;">❌ ${err}</div><div style="font-size:10px;color:${s.subtext};margin-top:4px;">📦 ${container}</div>`);
+                                    }
+                                }
+                            );
+                        }
+                    }, 300); // délai 300ms avant d'afficher
+                });
+
+                cell.addEventListener('mousemove', function(e) {
+                    mouseX = e.clientX;
+                    mouseY = e.clientY;
+                    if (tooltip.style.display !== 'none') {
+                        const tw = tooltip.offsetWidth || 200;
+                        const th = tooltip.offsetHeight || 80;
+                        let left = mouseX + 14;
+                        let top  = mouseY - 10;
+                        if (left + tw > window.innerWidth  - 10) left = mouseX - tw - 14;
+                        if (top  + th > window.innerHeight - 10) top  = window.innerHeight - th - 10;
+                        if (top < 6) top = 6;
+                        tooltip.style.left = left + 'px';
+                        tooltip.style.top  = top  + 'px';
+                    }
+                });
+
+                cell.addEventListener('mouseleave', function() {
+                    clearTimeout(hoverTimer);
+                    hideTooltip();
+                });
+            });
+        }
+
+        // ── Observe la table inventory (dynamique via DataTables) ────
+        waitForKeyElements('#table-inventory tbody tr', function(jqRow) {
+            jqRow.each(function() {
+                attachTransshipmentHover(this);
+            });
+        }, false);
+
+        // Tooltip a un lien cliquable → besoin de pointer-events
+        tooltip.addEventListener('mouseenter', () => {
+            tooltip.style.pointerEvents = 'all';
+        });
+        tooltip.addEventListener('mouseleave', () => {
+            tooltip.style.pointerEvents = 'none';
+            hideTooltip();
+        });
+
+    })();
 
 })();
