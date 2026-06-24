@@ -615,6 +615,514 @@ table.a-bordered tr:first-child th {
 .a-box { border-top-color: #a8ff3e !important; }
 `
         },
+        atlantis: {
+            bg1:'#000d1a', bg2:'#001833', bg3:'#002b55',
+            accent:'#00d4ff', accentDark:'#005577', label:'🌊 Atlantis',
+            prepBg:'#001833', prepNoPrep:'#ff6b6b', prepYes:'#00d4ff',
+            isGradient:true, isAnimated:true,
+            gradHeader:'linear-gradient(135deg, #002b55 0%, #005577 45%, #007799 100%)',
+            gradPanel:'linear-gradient(160deg, #000d1a 0%, #001833 55%, #000d1a 100%)',
+            gradAccent:'linear-gradient(90deg, #00d4ff 0%, #00ffcc 40%, #7be0ff 70%, #00d4ff 100%)',
+            gradBtn:'linear-gradient(135deg, #002b55 0%, #005577 60%, #00d4ff 100%)',
+            animCSS:`
+@keyframes fcr-atl-swim {
+    0%   { transform: translateX(-100px) scaleX(1); }
+    48%  { transform: translateX(calc(100vw + 100px)) scaleX(1); }
+    49%  { transform: translateX(calc(100vw + 100px)) scaleX(-1); }
+    97%  { transform: translateX(-100px) scaleX(-1); }
+    98%  { transform: translateX(-100px) scaleX(1); }
+    100% { transform: translateX(-100px) scaleX(1); }
+}
+@keyframes fcr-atl-swim2 {
+    0%   { transform: translateX(-80px) scaleX(-1); }
+    48%  { transform: translateX(calc(100vw + 80px)) scaleX(-1); }
+    49%  { transform: translateX(calc(100vw + 80px)) scaleX(1); }
+    97%  { transform: translateX(-80px) scaleX(1); }
+    98%  { transform: translateX(-80px) scaleX(-1); }
+    100% { transform: translateX(-80px) scaleX(-1); }
+}
+@keyframes fcr-atl-wave {
+    0%,100% { transform: translateX(-100px) translateY(0px) scaleX(1); }
+    25%      { transform: translateX(25vw) translateY(-18px) scaleX(1); }
+    50%      { transform: translateX(calc(100vw + 100px)) translateY(0px) scaleX(1); }
+    51%      { transform: translateX(calc(100vw + 100px)) translateY(0px) scaleX(-1); }
+    75%      { transform: translateX(60vw) translateY(-12px) scaleX(-1); }
+    99%      { transform: translateX(-100px) translateY(0px) scaleX(-1); }
+}
+@keyframes fcr-atl-bg {
+    0%,100% { background-position: 0% 50%; }
+    50%      { background-position: 100% 50%; }
+}
+@keyframes fcr-atl-glow {
+    0%,100% { box-shadow: 0 0 8px #00d4ff33, 0 0 18px #00779911; }
+    50%      { box-shadow: 0 0 22px #00d4ff77, 0 0 44px #00ffcc33; }
+}
+@keyframes fcr-atl-text {
+    0%,100% { text-shadow: 0 0 6px #00d4ffcc, 0 0 16px #00d4ff66; }
+    50%      { text-shadow: 0 0 14px #00ffcccc, 0 0 32px #00ffcc66; }
+}
+@keyframes fcr-atl-bubble {
+    0%   { transform: translateY(100vh) scale(0.5); opacity: 0; }
+    10%  { opacity: 0.6; }
+    90%  { opacity: 0.3; }
+    100% { transform: translateY(-60px) scale(1.2); opacity: 0; }
+}
+.fcr-atl-creature {
+    position: fixed;
+    pointer-events: none;
+    line-height: 1;
+}
+body, #side-bar {
+    background: linear-gradient(160deg, #000d1a, #001833, #000d1a, #001022, #000d1a) !important;
+    background-size: 400% 400% !important;
+    animation: fcr-atl-bg 20s ease infinite !important;
+    position: relative !important;
+    overflow-x: hidden !important;
+}
+body::before {
+    content: '🐠';
+    position: fixed;
+    top: 40%;
+    left: 0;
+    font-size: 30px;
+    pointer-events: none;
+    z-index: 9997;
+    animation: fcr-atl-swim 13s linear infinite;
+    filter: drop-shadow(0 0 6px #00d4ff88);
+}
+body::after {
+    content: '🐟';
+    position: fixed;
+    top: 60%;
+    left: 0;
+    font-size: 20px;
+    pointer-events: none;
+    z-index: 9996;
+    opacity: 0.8;
+    animation: fcr-atl-swim2 9s linear 3s infinite;
+    filter: drop-shadow(0 0 4px #00ffcc66);
+}
+#fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel {
+    animation: fcr-atl-glow 4s ease-in-out infinite !important;
+}
+#hazmat-fcr-header, #fcr-theme-header, #fcr-module-header {
+    background: linear-gradient(135deg, #002b55, #005577, #007799, #005577, #002b55) !important;
+    background-size: 300% 300% !important;
+    animation: fcr-atl-bg 10s ease infinite !important;
+}
+#hazmat-fcr-header-title, #fcr-theme-label, #fcr-module-label {
+    animation: fcr-atl-text 3s ease-in-out infinite !important;
+}
+table.a-bordered tr:first-child th {
+    border-bottom: 2px solid #00d4ff55 !important;
+    text-shadow: 0 0 8px #00d4ff88 !important;
+}
+.a-box { border-top-color: #00d4ff !important; }
+`
+        },
+        halloween: {
+            bg1:'#0a0010', bg2:'#130020', bg3:'#1e0030',
+            accent:'#ff7700', accentDark:'#7a3300', label:'🎃 Halloween',
+            prepBg:'#130020', prepNoPrep:'#ff3366', prepYes:'#ff7700',
+            isGradient:true, isAnimated:true,
+            gradHeader:'linear-gradient(135deg, #1e0030 0%, #3a0060 45%, #5a0080 100%)',
+            gradPanel:'linear-gradient(160deg, #0a0010 0%, #130020 55%, #0a0010 100%)',
+            gradAccent:'linear-gradient(90deg, #ff7700 0%, #ff4400 40%, #cc00ff 70%, #ff7700 100%)',
+            gradBtn:'linear-gradient(135deg, #1e0030 0%, #5a0050 60%, #ff7700 100%)',
+            animCSS:`
+@keyframes fcr-hal-bat {
+    0%   { transform: translateX(-60px) translateY(0px) scaleX(1); }
+    15%  { transform: translateX(20vw) translateY(-40px) scaleX(1); }
+    30%  { transform: translateX(40vw) translateY(10px) scaleX(1); }
+    45%  { transform: translateX(calc(100vw + 60px)) translateY(-20px) scaleX(1); }
+    46%  { transform: translateX(calc(100vw + 60px)) translateY(-20px) scaleX(-1); }
+    60%  { transform: translateX(70vw) translateY(15px) scaleX(-1); }
+    80%  { transform: translateX(30vw) translateY(-30px) scaleX(-1); }
+    99%  { transform: translateX(-60px) translateY(0px) scaleX(-1); }
+    100% { transform: translateX(-60px) translateY(0px) scaleX(1); }
+}
+@keyframes fcr-hal-bat2 {
+    0%   { transform: translateX(calc(100vw + 50px)) scaleX(-1); }
+    48%  { transform: translateX(-80px) scaleX(-1); }
+    49%  { transform: translateX(-80px) scaleX(1); }
+    97%  { transform: translateX(calc(100vw + 50px)) scaleX(1); }
+    98%  { transform: translateX(calc(100vw + 50px)) scaleX(-1); }
+    100% { transform: translateX(calc(100vw + 50px)) scaleX(-1); }
+}
+@keyframes fcr-hal-ghost {
+    0%   { opacity: 0; transform: translateY(20px); }
+    10%  { opacity: 0.7; transform: translateY(0px); }
+    80%  { opacity: 0.7; transform: translateY(-10px); }
+    100% { opacity: 0; transform: translateY(-30px); }
+}
+@keyframes fcr-hal-pumpkin {
+    0%,100% { transform: scale(1) rotate(-3deg); filter: drop-shadow(0 0 8px #ff770099); }
+    50%      { transform: scale(1.05) rotate(3deg); filter: drop-shadow(0 0 18px #ff7700cc); }
+}
+@keyframes fcr-hal-bg {
+    0%,100% { background-position: 0% 50%; }
+    50%      { background-position: 100% 50%; }
+}
+@keyframes fcr-hal-glow {
+    0%,100% { box-shadow: 0 0 8px #ff770033, 0 0 18px #cc00ff11; }
+    50%      { box-shadow: 0 0 22px #ff770077, 0 0 44px #cc00ff33; }
+}
+@keyframes fcr-hal-text {
+    0%,100% { text-shadow: 0 0 6px #ff7700cc, 0 0 16px #ff770066; }
+    50%      { text-shadow: 0 0 14px #cc00ffcc, 0 0 32px #cc00ff66; }
+}
+.fcr-hal-creature {
+    position: fixed;
+    pointer-events: none;
+    line-height: 1;
+}
+body, #side-bar {
+    background: linear-gradient(160deg, #0a0010, #130020, #0a0010, #100018, #0a0010) !important;
+    background-size: 400% 400% !important;
+    animation: fcr-hal-bg 16s ease infinite !important;
+    position: relative !important;
+    overflow-x: hidden !important;
+}
+body::before {
+    content: '🦇';
+    position: fixed;
+    top: 25%;
+    left: 0;
+    font-size: 28px;
+    pointer-events: none;
+    z-index: 9997;
+    animation: fcr-hal-bat 10s linear infinite;
+    filter: drop-shadow(0 0 6px #cc00ff88);
+}
+body::after {
+    content: '🦇';
+    position: fixed;
+    top: 55%;
+    left: 0;
+    font-size: 18px;
+    pointer-events: none;
+    z-index: 9996;
+    opacity: 0.75;
+    animation: fcr-hal-bat2 7s linear 2s infinite;
+    filter: drop-shadow(0 0 4px #ff770066);
+}
+#fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel {
+    animation: fcr-hal-glow 3s ease-in-out infinite !important;
+}
+#hazmat-fcr-header, #fcr-theme-header, #fcr-module-header {
+    background: linear-gradient(135deg, #1e0030, #3a0060, #5a0080, #3a0060, #1e0030) !important;
+    background-size: 300% 300% !important;
+    animation: fcr-hal-bg 8s ease infinite !important;
+}
+#hazmat-fcr-header-title, #fcr-theme-label, #fcr-module-label {
+    animation: fcr-hal-text 3s ease-in-out infinite !important;
+}
+table.a-bordered tr:first-child th {
+    border-bottom: 2px solid #ff770055 !important;
+    text-shadow: 0 0 8px #ff770088 !important;
+}
+.a-box { border-top-color: #ff7700 !important; }
+`
+        },
+        blizzard: {
+            bg1:'#010a14', bg2:'#021828', bg3:'#032a44',
+            accent:'#a8e4ff', accentDark:'#1a5577', label:'❄️ Blizzard',
+            prepBg:'#021828', prepNoPrep:'#ff6b6b', prepYes:'#a8e4ff',
+            isGradient:true, isAnimated:true,
+            gradHeader:'linear-gradient(135deg, #032a44 0%, #1a5577 45%, #2a80aa 100%)',
+            gradPanel:'linear-gradient(160deg, #010a14 0%, #021828 55%, #010a14 100%)',
+            gradAccent:'linear-gradient(90deg, #a8e4ff 0%, #ffffff 40%, #c8f0ff 70%, #a8e4ff 100%)',
+            gradBtn:'linear-gradient(135deg, #032a44 0%, #1a5577 60%, #a8e4ff 100%)',
+            animCSS:`
+@keyframes fcr-bliz-snow {
+    0%   { transform: translateY(-30px) translateX(0px) rotate(0deg); opacity: 0; }
+    5%   { opacity: 0.9; }
+    90%  { opacity: 0.6; }
+    100% { transform: translateY(110vh) translateX(40px) rotate(360deg); opacity: 0; }
+}
+@keyframes fcr-bliz-snow2 {
+    0%   { transform: translateY(-30px) translateX(0px) rotate(0deg); opacity: 0; }
+    5%   { opacity: 0.7; }
+    90%  { opacity: 0.4; }
+    100% { transform: translateY(110vh) translateX(-50px) rotate(-270deg); opacity: 0; }
+}
+@keyframes fcr-bliz-snow3 {
+    0%   { transform: translateY(-30px) translateX(0px); opacity: 0; }
+    8%   { opacity: 0.5; }
+    85%  { opacity: 0.3; }
+    100% { transform: translateY(110vh) translateX(25px); opacity: 0; }
+}
+@keyframes fcr-bliz-penguin {
+    0%   { transform: translateX(-80px) scaleX(1); }
+    48%  { transform: translateX(calc(100vw + 80px)) scaleX(1); }
+    49%  { transform: translateX(calc(100vw + 80px)) scaleX(-1); }
+    97%  { transform: translateX(-80px) scaleX(-1); }
+    98%  { transform: translateX(-80px) scaleX(1); }
+    100% { transform: translateX(-80px) scaleX(1); }
+}
+@keyframes fcr-bliz-bg {
+    0%,100% { background-position: 0% 50%; }
+    50%      { background-position: 100% 50%; }
+}
+@keyframes fcr-bliz-glow {
+    0%,100% { box-shadow: 0 0 8px #a8e4ff33, 0 0 18px #1a557711; }
+    50%      { box-shadow: 0 0 22px #a8e4ff77, 0 0 44px #ffffff33; }
+}
+@keyframes fcr-bliz-text {
+    0%,100% { text-shadow: 0 0 6px #a8e4ffcc, 0 0 16px #a8e4ff66; }
+    50%      { text-shadow: 0 0 14px #ffffffcc, 0 0 32px #ffffff66; }
+}
+.fcr-bliz-flake {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9996;
+}
+body, #side-bar {
+    background: linear-gradient(160deg, #010a14, #021828, #010a14, #011020, #010a14) !important;
+    background-size: 400% 400% !important;
+    animation: fcr-bliz-bg 22s ease infinite !important;
+    position: relative !important;
+    overflow-x: hidden !important;
+}
+body::before {
+    content: '🐧';
+    position: fixed;
+    bottom: 2px;
+    left: 0;
+    font-size: 32px;
+    pointer-events: none;
+    z-index: 9997;
+    animation: fcr-bliz-penguin 14s linear infinite;
+    filter: drop-shadow(0 0 6px #a8e4ff88);
+}
+body::after {
+    content: '❄️';
+    position: fixed;
+    top: -30px;
+    left: 15%;
+    font-size: 18px;
+    pointer-events: none;
+    z-index: 9997;
+    animation: fcr-bliz-snow 8s linear infinite;
+    opacity: 0.8;
+}
+#fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel {
+    animation: fcr-bliz-glow 4s ease-in-out infinite !important;
+}
+#hazmat-fcr-header, #fcr-theme-header, #fcr-module-header {
+    background: linear-gradient(135deg, #032a44, #1a5577, #2a80aa, #1a5577, #032a44) !important;
+    background-size: 300% 300% !important;
+    animation: fcr-bliz-bg 12s ease infinite !important;
+}
+#hazmat-fcr-header-title, #fcr-theme-label, #fcr-module-label {
+    animation: fcr-bliz-text 3s ease-in-out infinite !important;
+}
+table.a-bordered tr:first-child th {
+    border-bottom: 2px solid #a8e4ff55 !important;
+    text-shadow: 0 0 8px #a8e4ff88 !important;
+}
+.a-box { border-top-color: #a8e4ff !important; }
+`
+        },
+        deepspace: {
+            bg1:'#000008', bg2:'#00000f', bg3:'#000018',
+            accent:'#ffffff', accentDark:'#333366', label:'🚀 Deep Space',
+            prepBg:'#00000f', prepNoPrep:'#ff4466', prepYes:'#aaaaff',
+            isGradient:true, isAnimated:true,
+            gradHeader:'linear-gradient(135deg, #000018 0%, #110033 45%, #220055 100%)',
+            gradPanel:'linear-gradient(160deg, #000008 0%, #00000f 55%, #000008 100%)',
+            gradAccent:'linear-gradient(90deg, #ffffff 0%, #aaaaff 40%, #ffaaff 70%, #ffffff 100%)',
+            gradBtn:'linear-gradient(135deg, #000018 0%, #220055 60%, #7755ff 100%)',
+            animCSS:`
+@keyframes fcr-space-comet {
+    0%   { transform: translate(-100px, -50px) rotate(35deg); opacity: 0; }
+    5%   { opacity: 1; }
+    95%  { opacity: 1; }
+    100% { transform: translate(calc(100vw + 100px), calc(100vh + 50px)) rotate(35deg); opacity: 0; }
+}
+@keyframes fcr-space-comet2 {
+    0%   { transform: translate(calc(100vw + 80px), -40px) rotate(-35deg); opacity: 0; }
+    5%   { opacity: 0.8; }
+    95%  { opacity: 0.8; }
+    100% { transform: translate(-80px, calc(100vh + 40px)) rotate(-35deg); opacity: 0; }
+}
+@keyframes fcr-space-ufo {
+    0%   { transform: translateX(-80px) translateY(0px) scaleX(1); }
+    20%  { transform: translateX(25vw) translateY(-30px) scaleX(1); }
+    40%  { transform: translateX(55vw) translateY(20px) scaleX(1); }
+    48%  { transform: translateX(calc(100vw + 80px)) translateY(-10px) scaleX(1); }
+    49%  { transform: translateX(calc(100vw + 80px)) translateY(-10px) scaleX(-1); }
+    70%  { transform: translateX(50vw) translateY(15px) scaleX(-1); }
+    95%  { transform: translateX(-80px) translateY(0px) scaleX(-1); }
+    96%  { transform: translateX(-80px) translateY(0px) scaleX(1); }
+    100% { transform: translateX(-80px) translateY(0px) scaleX(1); }
+}
+@keyframes fcr-space-star {
+    0%,100% { opacity: 0.2; transform: scale(0.8); }
+    50%      { opacity: 1; transform: scale(1.2); }
+}
+@keyframes fcr-space-bg {
+    0%,100% { background-position: 0% 50%; }
+    50%      { background-position: 100% 50%; }
+}
+@keyframes fcr-space-glow {
+    0%,100% { box-shadow: 0 0 8px #ffffff22, 0 0 18px #7755ff11; }
+    50%      { box-shadow: 0 0 22px #aaaaff66, 0 0 44px #7755ff33; }
+}
+@keyframes fcr-space-text {
+    0%,100% { text-shadow: 0 0 6px #ffffffcc, 0 0 16px #aaaaff66; }
+    50%      { text-shadow: 0 0 14px #ffaaffcc, 0 0 32px #ffaaff66; }
+}
+.fcr-space-obj {
+    position: fixed;
+    pointer-events: none;
+    line-height: 1;
+}
+body, #side-bar {
+    background: #000008 !important;
+    position: relative !important;
+    overflow-x: hidden !important;
+}
+body::before {
+    content: '☄️';
+    position: fixed;
+    top: 10%;
+    left: 0;
+    font-size: 24px;
+    pointer-events: none;
+    z-index: 9997;
+    animation: fcr-space-comet 6s linear infinite;
+    filter: drop-shadow(0 0 8px #ffffffaa);
+}
+body::after {
+    content: '🛸';
+    position: fixed;
+    top: 45%;
+    left: 0;
+    font-size: 28px;
+    pointer-events: none;
+    z-index: 9997;
+    animation: fcr-space-ufo 18s linear 3s infinite;
+    filter: drop-shadow(0 0 8px #aaaaff99);
+}
+#fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel {
+    animation: fcr-space-glow 4s ease-in-out infinite !important;
+}
+#hazmat-fcr-header, #fcr-theme-header, #fcr-module-header {
+    background: linear-gradient(135deg, #000018, #110033, #220055, #110033, #000018) !important;
+    background-size: 300% 300% !important;
+    animation: fcr-space-bg 12s ease infinite !important;
+}
+#hazmat-fcr-header-title, #fcr-theme-label, #fcr-module-label {
+    animation: fcr-space-text 3s ease-in-out infinite !important;
+}
+table.a-bordered tr:first-child th {
+    border-bottom: 2px solid #aaaaff55 !important;
+    text-shadow: 0 0 8px #aaaaff88 !important;
+}
+.a-box { border-top-color: #aaaaff !important; }
+`
+        },
+        safari: {
+            bg1:'#1a0e00', bg2:'#2a1800', bg3:'#3d2500',
+            accent:'#ffbb44', accentDark:'#7a5500', label:'🌺 Safari',
+            prepBg:'#2a1800', prepNoPrep:'#ff4444', prepYes:'#ffbb44',
+            isGradient:true, isAnimated:true,
+            gradHeader:'linear-gradient(135deg, #3d2500 0%, #7a4a00 45%, #b06a00 100%)',
+            gradPanel:'linear-gradient(160deg, #1a0e00 0%, #2a1800 55%, #1a0e00 100%)',
+            gradAccent:'linear-gradient(90deg, #ffbb44 0%, #ffdd88 40%, #ff8844 70%, #ffbb44 100%)',
+            gradBtn:'linear-gradient(135deg, #3d2500 0%, #7a4a00 60%, #ffbb44 100%)',
+            animCSS:`
+@keyframes fcr-saf-walk {
+    0%   { transform: translateX(-120px) scaleX(1); }
+    48%  { transform: translateX(calc(100vw + 120px)) scaleX(1); }
+    49%  { transform: translateX(calc(100vw + 120px)) scaleX(-1); }
+    97%  { transform: translateX(-120px) scaleX(-1); }
+    98%  { transform: translateX(-120px) scaleX(1); }
+    100% { transform: translateX(-120px) scaleX(1); }
+}
+@keyframes fcr-saf-walk2 {
+    0%   { transform: translateX(-100px) scaleX(-1); }
+    48%  { transform: translateX(calc(100vw + 100px)) scaleX(-1); }
+    49%  { transform: translateX(calc(100vw + 100px)) scaleX(1); }
+    97%  { transform: translateX(-100px) scaleX(1); }
+    98%  { transform: translateX(-100px) scaleX(-1); }
+    100% { transform: translateX(-100px) scaleX(-1); }
+}
+@keyframes fcr-saf-fly {
+    0%   { transform: translateX(-60px) translateY(0px) scaleX(1); }
+    25%  { transform: translateX(30vw) translateY(-25px) scaleX(1); }
+    48%  { transform: translateX(calc(100vw + 60px)) translateY(5px) scaleX(1); }
+    49%  { transform: translateX(calc(100vw + 60px)) translateY(5px) scaleX(-1); }
+    75%  { transform: translateX(55vw) translateY(-20px) scaleX(-1); }
+    99%  { transform: translateX(-60px) translateY(0px) scaleX(-1); }
+    100% { transform: translateX(-60px) translateY(0px) scaleX(1); }
+}
+@keyframes fcr-saf-bg {
+    0%,100% { background-position: 0% 50%; }
+    50%      { background-position: 100% 50%; }
+}
+@keyframes fcr-saf-glow {
+    0%,100% { box-shadow: 0 0 8px #ffbb4433, 0 0 18px #7a550011; }
+    50%      { box-shadow: 0 0 22px #ffbb4477, 0 0 44px #ff884433; }
+}
+@keyframes fcr-saf-text {
+    0%,100% { text-shadow: 0 0 6px #ffbb44cc, 0 0 16px #ffbb4466; }
+    50%      { text-shadow: 0 0 14px #ffdd88cc, 0 0 32px #ffdd8866; }
+}
+.fcr-saf-animal {
+    position: fixed;
+    pointer-events: none;
+    line-height: 1;
+}
+body, #side-bar {
+    background: linear-gradient(160deg, #1a0e00, #2a1800, #1a0e00, #221200, #1a0e00) !important;
+    background-size: 400% 400% !important;
+    animation: fcr-saf-bg 20s ease infinite !important;
+    position: relative !important;
+    overflow-x: hidden !important;
+}
+body::before {
+    content: '🦒';
+    position: fixed;
+    bottom: 2px;
+    left: 0;
+    font-size: 44px;
+    pointer-events: none;
+    z-index: 9997;
+    animation: fcr-saf-walk 18s linear infinite;
+    filter: drop-shadow(0 0 6px #ffbb4488);
+}
+body::after {
+    content: '🦁';
+    position: fixed;
+    bottom: 2px;
+    left: 0;
+    font-size: 30px;
+    pointer-events: none;
+    z-index: 9996;
+    opacity: 0.85;
+    animation: fcr-saf-walk2 12s linear 5s infinite;
+    filter: drop-shadow(0 0 5px #ff884466);
+}
+#fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel {
+    animation: fcr-saf-glow 4s ease-in-out infinite !important;
+}
+#hazmat-fcr-header, #fcr-theme-header, #fcr-module-header {
+    background: linear-gradient(135deg, #3d2500, #7a4a00, #b06a00, #7a4a00, #3d2500) !important;
+    background-size: 300% 300% !important;
+    animation: fcr-saf-bg 10s ease infinite !important;
+}
+#hazmat-fcr-header-title, #fcr-theme-label, #fcr-module-label {
+    animation: fcr-saf-text 3s ease-in-out infinite !important;
+}
+table.a-bordered tr:first-child th {
+    border-bottom: 2px solid #ffbb4455 !important;
+    text-shadow: 0 0 8px #ffbb4488 !important;
+}
+.a-box { border-top-color: #ffbb44 !important; }
+`
+        },
         void_theme: {
             bg1:'#000005', bg2:'#080010', bg3:'#100018',
             accent:'#00ff88', accentDark:'#004433', label:'🌀 Void',
@@ -864,11 +1372,12 @@ table.a-bordered tr:first-child th {
         .prep-instructions-row td.prep-noprep { color: ${t.prepNoPrep} !important; font-weight:bold; }
         .prep-instructions-row td.prep-yes  { color: ${t.prepYes} !important; font-weight:bold; }
         #fcr-theme-panel { border-bottom:2px solid ${t.accentDark}; background:${panelBg}; overflow:hidden; }
-        #fcr-theme-header { display:flex; align-items:center; justify-content:space-between; padding:7px 10px; cursor:pointer; border-bottom:1px solid ${t.accentDark}; user-select:none; transition:background 0.2s; }
-        #fcr-theme-header:hover { background:${t.bg3}; }
+        #fcr-theme-header { display:flex; align-items:center; justify-content:space-between; padding:7px 10px; border-bottom:1px solid ${t.accentDark}; user-select:none; }
         #fcr-theme-label { color:${t.accent}; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; }
-        #fcr-theme-arrow { color:${t.accent}; font-size:9px; font-weight:700; }
-        #fcr-theme-body { padding:7px 8px 8px 8px; }
+        .fcr-theme-section-header { display:flex; align-items:center; justify-content:space-between; padding:5px 10px; cursor:pointer; border-bottom:1px solid ${t.accentDark}44; user-select:none; transition:background 0.2s; }
+        .fcr-theme-section-header:hover { background:${t.bg3}; }
+        .fcr-theme-section-header span:first-child { color:${t.accent}; font-size:10px; font-weight:700; opacity:0.8; }
+        .fcr-theme-section-header span:last-child { color:${t.accent}; font-size:9px; font-weight:700; }
         #fcr-theme-panel .fcr-theme-btn { display:inline-block; margin:2px 3px 2px 0; padding:3px 8px; border-radius:4px; font-size:10px; font-weight:700; cursor:pointer; border:1px solid; transition:0.2s; white-space:nowrap; }
         #fcr-theme-panel .fcr-theme-btn.active { opacity:1; box-shadow:0 0 6px currentColor; transform:scale(1.08); }
         #fcr-theme-panel .fcr-theme-btn:not(.active) { opacity:0.5; }
@@ -889,6 +1398,11 @@ table.a-bordered tr:first-child th {
         #fcr-theme-btn-cyberpunk { background:${THEMES.cyberpunk.gradBtn}; color:#f9e900; border-color:${THEMES.cyberpunk.accent}; text-shadow:0 0 6px #f9e900aa; }
         #fcr-theme-btn-void_theme { background:${THEMES.void_theme.gradBtn}; color:#00ff88; border-color:${THEMES.void_theme.accent}; text-shadow:0 0 6px #00ff88aa; }
         #fcr-theme-btn-fred { background:${THEMES.fred.gradBtn}; color:#a8ff3e; border-color:${THEMES.fred.accent}; text-shadow:0 0 6px #a8ff3eaa; }
+        #fcr-theme-btn-atlantis { background:${THEMES.atlantis.gradBtn}; color:#00d4ff; border-color:${THEMES.atlantis.accent}; text-shadow:0 0 6px #00d4ffaa; }
+        #fcr-theme-btn-halloween { background:${THEMES.halloween.gradBtn}; color:#ff7700; border-color:${THEMES.halloween.accent}; text-shadow:0 0 6px #ff7700aa; }
+        #fcr-theme-btn-blizzard { background:${THEMES.blizzard.gradBtn}; color:#a8e4ff; border-color:${THEMES.blizzard.accent}; text-shadow:0 0 6px #a8e4ffaa; }
+        #fcr-theme-btn-deepspace { background:${THEMES.deepspace.gradBtn}; color:#aaaaff; border-color:#7755ff; text-shadow:0 0 6px #aaaaffaa; }
+        #fcr-theme-btn-safari { background:${THEMES.safari.gradBtn}; color:#ffbb44; border-color:${THEMES.safari.accent}; text-shadow:0 0 6px #ffbb44aa; }
         /* Module panel theming — suit désormais le thème actif */
         #fcr-module-panel { border-bottom:2px solid ${t.accentDark}; background:${panelBg}; overflow:hidden; }
         #fcr-module-header { display:flex; align-items:center; justify-content:space-between; padding:7px 10px; cursor:pointer; border-bottom:1px solid ${t.accentDark}; user-select:none; transition:background 0.2s; }
@@ -987,26 +1501,144 @@ table.a-bordered tr:first-child th {
         // ── Dinos supplémentaires FRED ──────────────────────────────
         document.querySelectorAll('.fcr-fred-dino').forEach(el => el.remove());
         if (themeName === 'fred') {
-            // Ptérodactyle volant (haut de page)
             const ptero = document.createElement('div');
             ptero.className = 'fcr-fred-dino';
             ptero.textContent = '🦅';
             ptero.style.cssText = 'top:60px; left:0; font-size:26px; animation: fcr-fred-fly 19s linear 2s infinite;';
             document.body.appendChild(ptero);
 
-            // Petit 🦕 rapide au sol
             const dino3 = document.createElement('div');
             dino3.className = 'fcr-fred-dino';
             dino3.textContent = '🦕';
             dino3.style.cssText = 'bottom:2px; left:0; font-size:20px; opacity:0.7; animation: fcr-fred-walk3 8s linear 1s infinite; filter: drop-shadow(0 0 4px #ffdd5766);';
             document.body.appendChild(dino3);
 
-            // 🦖 T-Rex plus lent en arrière-plan
             const trex = document.createElement('div');
             trex.className = 'fcr-fred-dino';
             trex.textContent = '🦖';
             trex.style.cssText = 'bottom:2px; left:0; font-size:50px; opacity:0.25; animation: fcr-fred-walk2 22s linear 7s infinite; z-index:9994;';
             document.body.appendChild(trex);
+        }
+
+        // ── Créatures ATLANTIS ───────────────────────────────────────
+        document.querySelectorAll('.fcr-atl-creature').forEach(el => el.remove());
+        if (themeName === 'atlantis') {
+            const shark = document.createElement('div');
+            shark.className = 'fcr-atl-creature';
+            shark.textContent = '🦈';
+            shark.style.cssText = 'top:25%; left:0; font-size:36px; z-index:9997; animation: fcr-atl-swim 20s linear 6s infinite; filter: drop-shadow(0 0 8px #00d4ff99);';
+            document.body.appendChild(shark);
+
+            const fish2 = document.createElement('div');
+            fish2.className = 'fcr-atl-creature';
+            fish2.textContent = '🐡';
+            fish2.style.cssText = 'top:70%; left:0; font-size:22px; z-index:9996; opacity:0.7; animation: fcr-atl-wave 15s linear 1s infinite; filter: drop-shadow(0 0 4px #00ffcc66);';
+            document.body.appendChild(fish2);
+
+            const octopus = document.createElement('div');
+            octopus.className = 'fcr-atl-creature';
+            octopus.textContent = '🐙';
+            octopus.style.cssText = 'top:50%; left:0; font-size:28px; z-index:9995; opacity:0.5; animation: fcr-atl-swim2 25s linear 10s infinite;';
+            document.body.appendChild(octopus);
+        }
+
+        // ── Créatures HALLOWEEN ──────────────────────────────────────
+        document.querySelectorAll('.fcr-hal-creature').forEach(el => el.remove());
+        if (themeName === 'halloween') {
+            const ghost = document.createElement('div');
+            ghost.className = 'fcr-hal-creature';
+            ghost.textContent = '👻';
+            ghost.style.cssText = 'top:35%; left:20%; font-size:30px; z-index:9997; animation: fcr-hal-ghost 5s ease-in-out 1s infinite; filter: drop-shadow(0 0 8px #ffffff88);';
+            document.body.appendChild(ghost);
+
+            const ghost2 = document.createElement('div');
+            ghost2.className = 'fcr-hal-creature';
+            ghost2.textContent = '👻';
+            ghost2.style.cssText = 'top:60%; left:70%; font-size:20px; z-index:9996; animation: fcr-hal-ghost 7s ease-in-out 3s infinite; filter: drop-shadow(0 0 6px #cc00ff88);';
+            document.body.appendChild(ghost2);
+
+            const pumpkin = document.createElement('div');
+            pumpkin.className = 'fcr-hal-creature';
+            pumpkin.textContent = '🎃';
+            pumpkin.style.cssText = 'bottom:4px; right:20px; font-size:28px; z-index:9997; animation: fcr-hal-pumpkin 3s ease-in-out infinite; filter: drop-shadow(0 0 10px #ff770099);';
+            document.body.appendChild(pumpkin);
+        }
+
+        // ── Flocons BLIZZARD ─────────────────────────────────────────
+        document.querySelectorAll('.fcr-bliz-flake').forEach(el => el.remove());
+        if (themeName === 'blizzard') {
+            const flakeData = [
+                { left:'30%', size:14, delay:'2s', dur:'10s', anim:'fcr-bliz-snow2' },
+                { left:'55%', size:10, delay:'5s', dur:'7s',  anim:'fcr-bliz-snow3' },
+                { left:'75%', size:16, delay:'0s', dur:'9s',  anim:'fcr-bliz-snow'  },
+                { left:'88%', size:10, delay:'3s', dur:'12s', anim:'fcr-bliz-snow2' },
+            ];
+            flakeData.forEach(f => {
+                const el = document.createElement('div');
+                el.className = 'fcr-bliz-flake';
+                el.textContent = '❄️';
+                el.style.cssText = `top:-30px; left:${f.left}; font-size:${f.size}px; animation: ${f.anim} ${f.dur} linear ${f.delay} infinite;`;
+                document.body.appendChild(el);
+            });
+
+            const polar = document.createElement('div');
+            polar.className = 'fcr-bliz-flake';
+            polar.textContent = '🐻‍❄️';
+            polar.style.cssText = 'bottom:2px; left:0; font-size:28px; z-index:9997; animation: fcr-bliz-penguin 20s linear 8s infinite; filter: drop-shadow(0 0 6px #a8e4ff88);';
+            document.body.appendChild(polar);
+        }
+
+        // ── Objets DEEP SPACE ────────────────────────────────────────
+        document.querySelectorAll('.fcr-space-obj').forEach(el => el.remove());
+        if (themeName === 'deepspace') {
+            const comet2 = document.createElement('div');
+            comet2.className = 'fcr-space-obj';
+            comet2.textContent = '☄️';
+            comet2.style.cssText = 'top:35%; right:0; font-size:18px; z-index:9996; animation: fcr-space-comet2 9s linear 4s infinite; filter: drop-shadow(0 0 6px #ffffffaa); opacity:0.7;';
+            document.body.appendChild(comet2);
+
+            const rocket = document.createElement('div');
+            rocket.className = 'fcr-space-obj';
+            rocket.textContent = '🚀';
+            rocket.style.cssText = 'bottom:10%; left:0; font-size:24px; z-index:9997; animation: fcr-space-comet 14s linear 7s infinite; filter: drop-shadow(0 0 8px #aaaaff99);';
+            document.body.appendChild(rocket);
+
+            const starData = [
+                { top:'15%', left:'10%', delay:'0s' },
+                { top:'40%', left:'80%', delay:'1.5s' },
+                { top:'70%', left:'40%', delay:'3s' },
+                { top:'25%', left:'55%', delay:'2s' },
+                { top:'80%', left:'85%', delay:'0.8s' },
+            ];
+            starData.forEach(s => {
+                const el = document.createElement('div');
+                el.className = 'fcr-space-obj';
+                el.textContent = '⭐';
+                el.style.cssText = `top:${s.top}; left:${s.left}; font-size:10px; z-index:9994; animation: fcr-space-star 2s ease-in-out ${s.delay} infinite; opacity:0.6;`;
+                document.body.appendChild(el);
+            });
+        }
+
+        // ── Animaux SAFARI ───────────────────────────────────────────
+        document.querySelectorAll('.fcr-saf-animal').forEach(el => el.remove());
+        if (themeName === 'safari') {
+            const eagle = document.createElement('div');
+            eagle.className = 'fcr-saf-animal';
+            eagle.textContent = '🦅';
+            eagle.style.cssText = 'top:15%; left:0; font-size:26px; z-index:9997; animation: fcr-saf-fly 16s linear 2s infinite; filter: drop-shadow(0 0 6px #ffbb4488);';
+            document.body.appendChild(eagle);
+
+            const elephant = document.createElement('div');
+            elephant.className = 'fcr-saf-animal';
+            elephant.textContent = '🐘';
+            elephant.style.cssText = 'bottom:2px; left:0; font-size:38px; z-index:9995; opacity:0.3; animation: fcr-saf-walk 28s linear 10s infinite;';
+            document.body.appendChild(elephant);
+
+            const zebra = document.createElement('div');
+            zebra.className = 'fcr-saf-animal';
+            zebra.textContent = '🦓';
+            zebra.style.cssText = 'bottom:2px; left:0; font-size:22px; z-index:9996; opacity:0.75; animation: fcr-saf-walk2 9s linear 3s infinite; filter: drop-shadow(0 0 4px #ffbb4466);';
+            document.body.appendChild(zebra);
         }
     }
 
@@ -1016,29 +1648,57 @@ table.a-bordered tr:first-child th {
         const sidebar = document.querySelector('#side-bar') || document.querySelector('.sidebar') || document.querySelector('[id*="side"]');
         if (!sidebar || document.getElementById('fcr-theme-panel')) return;
 
-        const isOpen = GM_getValue('themePanelOpen', true);
-        const themeKeys = Object.keys(THEMES);
+        const isStaticOpen  = GM_getValue('themePanelStaticOpen', true);
+        const isAnimOpen    = GM_getValue('themePanelAnimOpen', true);
+
+        const staticKeys = Object.keys(THEMES).filter(k => !THEMES[k].isAnimated);
+        const animKeys   = Object.keys(THEMES).filter(k =>  THEMES[k].isAnimated);
 
         const panel = document.createElement('div');
         panel.id = 'fcr-theme-panel';
+
         panel.innerHTML = `
             <div id="fcr-theme-header">
                 <span id="fcr-theme-label">🎨 THÈME COULEUR</span>
-                <span id="fcr-theme-arrow">${isOpen ? '▲' : '▼'}</span>
             </div>
-            <div id="fcr-theme-body" style="display:${isOpen ? 'block' : 'none'}">
-                ${themeKeys.map(k => `<span class="fcr-theme-btn${currentTheme===k?' active':''}" id="fcr-theme-btn-${k}" data-theme="${k}">${THEMES[k].label}</span>`).join('\n                ')}
+            <div id="fcr-theme-static-section">
+                <div id="fcr-theme-static-header" class="fcr-theme-section-header">
+                    <span>⬛ Statiques</span>
+                    <span id="fcr-theme-static-arrow">${isStaticOpen ? '▲' : '▼'}</span>
+                </div>
+                <div id="fcr-theme-static-body" style="display:${isStaticOpen ? 'block' : 'none'}; padding:5px 8px 6px 8px;">
+                    ${staticKeys.map(k => `<span class="fcr-theme-btn${currentTheme===k?' active':''}" id="fcr-theme-btn-${k}" data-theme="${k}">${THEMES[k].label}</span>`).join('\n                    ')}
+                </div>
+            </div>
+            <div id="fcr-theme-anim-section">
+                <div id="fcr-theme-anim-header" class="fcr-theme-section-header">
+                    <span>✨ Animés</span>
+                    <span id="fcr-theme-anim-arrow">${isAnimOpen ? '▲' : '▼'}</span>
+                </div>
+                <div id="fcr-theme-anim-body" style="display:${isAnimOpen ? 'block' : 'none'}; padding:5px 8px 6px 8px;">
+                    ${animKeys.map(k => `<span class="fcr-theme-btn${currentTheme===k?' active':''}" id="fcr-theme-btn-${k}" data-theme="${k}">${THEMES[k].label}</span>`).join('\n                    ')}
+                </div>
             </div>
         `;
+
         sidebar.insertBefore(panel, sidebar.firstChild);
 
-        document.getElementById('fcr-theme-header').addEventListener('click', () => {
-            const body = document.getElementById('fcr-theme-body');
-            const arrow = document.getElementById('fcr-theme-arrow');
+        document.getElementById('fcr-theme-static-header').addEventListener('click', () => {
+            const body  = document.getElementById('fcr-theme-static-body');
+            const arrow = document.getElementById('fcr-theme-static-arrow');
             const opening = body.style.display === 'none';
             body.style.display = opening ? 'block' : 'none';
             arrow.textContent = opening ? '▲' : '▼';
-            GM_setValue('themePanelOpen', opening);
+            GM_setValue('themePanelStaticOpen', opening);
+        });
+
+        document.getElementById('fcr-theme-anim-header').addEventListener('click', () => {
+            const body  = document.getElementById('fcr-theme-anim-body');
+            const arrow = document.getElementById('fcr-theme-anim-arrow');
+            const opening = body.style.display === 'none';
+            body.style.display = opening ? 'block' : 'none';
+            arrow.textContent = opening ? '▲' : '▼';
+            GM_setValue('themePanelAnimOpen', opening);
         });
 
         panel.querySelectorAll('.fcr-theme-btn').forEach(btn => {
