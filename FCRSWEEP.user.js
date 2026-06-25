@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         FCR Lite Ultra V4 — SWEEP
-// @version      2.6.0
+// @version      3.0.0
 // @description  FCR Lite SWEEP — Thèmes, Prep, God Mode Print, Hazmat, Étiquettes, Couleurs, CSV, Weight (sans Bin Check, Floor Finder, Analyse Palette)
 // @author       @JEANBAYD
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2*
@@ -184,26 +184,34 @@
                 if (seen.has(el)) return;
                 seen.add(el);
                 matched = true;
-                // Encapsule dans un objet jQuery-like pour compatibilité avec les callbacks existants
                 const jqLike = $(el);
                 callback(jqLike);
             });
             return matched;
         }
 
-        // Traitement immédiat si des éléments sont déjà présents
         const foundImmediately = processMatches();
         if (foundImmediately && runOnce) return;
 
         let wfkeTimer = null;
+        let wfkePending = false;
+
         const obs = new MutationObserver(() => {
+            if (wfkePending) return; // ignore si déjà schedulé
+            wfkePending = true;
             clearTimeout(wfkeTimer);
             wfkeTimer = setTimeout(() => {
+                wfkePending = false;
                 const found = processMatches();
                 if (found && runOnce) obs.disconnect();
-            }, 80);
+            }, 150); // debounce augmenté : 80ms → 150ms
         });
-        obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
+        obs.observe(document.body || document.documentElement, {
+            childList: true,
+            subtree: true,
+            attributes: false,  // on n'a pas besoin des attributs
+            characterData: false // ni du texte
+        });
     }
 
     function debounce(func, delay) {
@@ -2012,9 +2020,9 @@ table.a-bordered tr:first-child th {
             prepInstructionsAdded = false;
             setTimeout(() => { addPrepInstructions(); addPrepButtons(); }, 2000);
         } else if (!prepInstructionsAdded) { addPrepInstructions(); }
-    }, 500));
+    }, 800)); // debounce augmenté 500→800ms
     const prepRoot = document.querySelector('main') || document.querySelector('[role="main"]') || document.querySelector('#content') || document.body;
-    prepObserver.observe(prepRoot, { childList: true, subtree: true });
+    prepObserver.observe(prepRoot, { childList: true, subtree: true, attributes: false, characterData: false });
     setTimeout(() => { addPrepInstructions(); addPrepButtons(); }, 2000);
 
     // ════════════════════════════════════════════════════════════════
@@ -2380,12 +2388,30 @@ table.a-bordered tr:first-child th {
 
             if (isModuleEnabled('godModePrint')) {
                 // Print buttons on inventory table rows
+                // ── Observer unique pour les lignes inventory (print + transshipment) ──
                 waitForKeyElements("#table-inventory tbody tr", function(row) {
                     row.each(function() {
-                        var cells = $(this).find('td');
+                        var tr = this;
+                        var cells = $(tr).find('td');
                         if (!cells[11]) return;
                         var titleText = cells[11].querySelector("a") ? cells[11].querySelector("a").textContent.trim() : "N/A";
                         var titleLink = cells[11].querySelector("a") || "N/A";
+
+                        // ── Badge quantité > 1 ───────────────────────────────────
+                        var qtyCell = cells[5]; // colonne Quantité (index 5)
+                        if (qtyCell && !$(qtyCell).find('.fcr-qty-badge').length) {
+                            var qtyRaw  = qtyCell.textContent.trim();
+                            var qtyVal  = parseInt(qtyRaw);
+                            if (!isNaN(qtyVal) && qtyVal > 1) {
+                                var badge = document.createElement('span');
+                                badge.className  = 'fcr-qty-badge';
+                                badge.textContent = qtyVal;
+                                badge.title      = `Quantité : ${qtyVal}`;
+                                qtyCell.dataset.qtyOrig = qtyVal; // fallback si CSS ne charge pas
+                                qtyCell.textContent = '';
+                                qtyCell.appendChild(badge);
+                            }
+                        }
                         cells.each(function(index) {
                             var cell = $(this);
                             if (cell.hasClass('print-processed')) return;
@@ -2417,6 +2443,11 @@ table.a-bordered tr:first-child th {
                                 }
                             }
                         });
+
+                        // Transshipment tooltip sur la même ligne
+                        if (typeof window.attachTransshipmentHover === 'function') {
+                            window.attachTransshipmentHover(tr);
+                        }
                     });
                     return true;
                 }, false);
@@ -2603,73 +2634,170 @@ table.a-bordered tr:first-child th {
                 // Free Print panel (Alt+P)
                 const barcodeShowStyle = document.createElement('style');
                 barcodeShowStyle.innerHTML = `
-                    .barcodes_cover { display:none;position:fixed;top:0;bottom:0;left:0;right:0;background-color:#f3f3f3cc;z-index:160;align-items:center;justify-items:center; }
-                    .barcodes_cover>.barcodes_panel { display:inline;width:100px;height:350px;background-color:#fff;border:1px solid #aaa;border-radius:5px;min-width:25rem;min-height:17rem;grid-template-rows:10% auto;align-items:center;justify-items:center;box-shadow:1px 1px 4px #999; }
-                    .barcodes_cover>.barcodes_panel>p { display:block;margin-top:1rem;color:#444; }
+                    .barcodes_cover { display:none;position:fixed;top:0;bottom:0;left:0;right:0;z-index:9998;align-items:center;justify-content:center; }
+                    .barcodes_panel { min-width:320px;border-radius:10px;padding:20px 24px;box-shadow:0 8px 32px rgba(0,0,0,0.45); }
+                    .barcodes_panel > p { display:block;margin:0 0 4px 0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px; }
                     .print-button-container { display:inline-block;margin-left:5px; }
                     .loading.adjacent_bin_finder_spinner { display:inline-block;margin-left:5px; }
                     .s-icon-status { display:inline-block; }
+                    #fcr-freeprint-title { font-size:13px;font-weight:800;text-align:center;margin-bottom:16px;letter-spacing:0.5px; }
+                    #fcr-freeprint-barcode { width:100%;padding:8px 10px;border-radius:6px;border:1px solid;font-size:13px;box-sizing:border-box;margin-bottom:12px;outline:none; }
+                    #fcr-freeprint-barcode:focus { box-shadow:0 0 0 2px; }
+                    .fcr-freeprint-qty-row { display:flex;align-items:center;gap:8px;margin-bottom:16px; }
+                    .fcr-freeprint-qty-label { font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;flex-shrink:0; }
+                    .fcr-freeprint-qty-btn { width:30px;height:30px;border-radius:5px;border:1px solid;cursor:pointer;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.15s; }
+                    #fcr-freeprint-qty { width:52px;height:30px;text-align:center;border-radius:5px;border:1px solid;font-size:14px;font-weight:700;box-sizing:border-box; }
+                    .fcr-freeprint-btn-row { display:flex;gap:10px;margin-top:4px; }
+                    #fcr-freeprint-print { flex:1;padding:9px 0;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:700;letter-spacing:0.3px;transition:all 0.18s; }
+                    #fcr-freeprint-print:hover { transform:scale(1.03); }
+                    #fcr-freeprint-close { padding:9px 16px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.15s; }
                 `;
 
-                var barcodeText = document.createElement("input");
-                barcodeText.id = "barcodeText";
+                var barcodeText     = document.createElement("input");
+                barcodeText.id      = "barcodeText";
                 var barcodeQuantity = document.createElement("input");
-                barcodeQuantity.type = "number"; barcodeQuantity.id = "barcodeQuantity"; barcodeQuantity.min = 1;
+                barcodeQuantity.type = "number"; barcodeQuantity.id = "barcodeQuantity"; barcodeQuantity.min = 1; barcodeQuantity.value = 1;
+
+                // Panel structure
                 var bar_cover = document.createElement("div");
                 bar_cover.classList.add("barcodes_cover");
                 let bar_panel = document.createElement("div");
                 bar_panel.classList.add("barcodes_panel");
-                var bar_label = document.createElement('p');
-                var FreePrintText = document.createElement('p');
-                var FreePrintQuantity = document.createElement('p');
-                var space = document.createElement("span"); space.innerHTML = "<br><br><br><br>";
-                var space1 = document.createElement("span"); space1.innerHTML = "<br><br>";
-                var buttonClose = document.createElement("button");
-                buttonClose.innerHTML = "Close";
-                buttonClose.onclick = function() { bar_cover.style.display = "none"; var si = document.getElementById("search"); if (si) si.focus(); };
+
+                // Titre
+                const fpTitle = document.createElement('div');
+                fpTitle.id = 'fcr-freeprint-title';
+                fpTitle.textContent = '🖶 Print Barcode';
+
+                // Label + champ barcode
+                const fpBarcodeLabel = document.createElement('p');
+                barcodeText.id = 'fcr-freeprint-barcode';
+                barcodeText.placeholder = 'Entrer le barcode…';
+                barcodeText.autocomplete = 'off';
+
+                // Sélecteur quantité +/-
+                const fpQtyRow = document.createElement('div');
+                fpQtyRow.className = 'fcr-freeprint-qty-row';
+                const fpQtyLabel = document.createElement('span');
+                fpQtyLabel.className = 'fcr-freeprint-qty-label';
+                fpQtyLabel.textContent = 'Quantité :';
+                const fpQtyMinus = document.createElement('button');
+                fpQtyMinus.className = 'fcr-freeprint-qty-btn';
+                fpQtyMinus.textContent = '−';
+                fpQtyMinus.onclick = () => { const v = parseInt(fpQtyInput.value)||1; if (v > 1) fpQtyInput.value = v - 1; };
+                const fpQtyInput = document.createElement('input');
+                fpQtyInput.id = 'fcr-freeprint-qty';
+                fpQtyInput.type = 'number';
+                fpQtyInput.min = 1;
+                fpQtyInput.value = 1;
+                const fpQtyPlus = document.createElement('button');
+                fpQtyPlus.className = 'fcr-freeprint-qty-btn';
+                fpQtyPlus.textContent = '+';
+                fpQtyPlus.onclick = () => { fpQtyInput.value = (parseInt(fpQtyInput.value)||1) + 1; };
+                fpQtyRow.appendChild(fpQtyLabel);
+                fpQtyRow.appendChild(fpQtyMinus);
+                fpQtyRow.appendChild(fpQtyInput);
+                fpQtyRow.appendChild(fpQtyPlus);
+
+                // Boutons Print / Close
+                const fpBtnRow = document.createElement('div');
+                fpBtnRow.className = 'fcr-freeprint-btn-row';
                 var buttonFPrint = document.createElement("button");
-                buttonFPrint.innerHTML = "Print";
+                buttonFPrint.id = 'fcr-freeprint-print';
+                buttonFPrint.innerHTML = "🖶 Print";
                 buttonFPrint.onclick = function() {
+                    const qty = Math.max(1, parseInt(fpQtyInput.value) || 1);
                     if (barcodeText.value == "") {
-                        Print_Status = "Unsuccessful (Barcode Empty)"; sendMessageNew("Free Print", barcodeText.value, "Unknown", 1, "N/A", "N/A");
+                        Print_Status = "Unsuccessful (Barcode Empty)"; sendMessageNew("Free Print", barcodeText.value, "Unknown", qty, "N/A", "N/A");
                         alert("Please enter text into the barcode box.");
                     } else if (barcodeText.value.includes("LPN")) {
                         const response = confirm("LPN's are considered unique and should not be printed. OK to continue?");
-                        if (response) getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(barcodeText.value) + "&text=" + asciihex(barcodeText.value) + "&quantity=1&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=&seq=" + genId(), "Free Print", barcodeText.value, "LPN", 1, "N/A", "N/A");
-                        else { Print_Status = "Cancelled"; sendMessageNew("Free Print", barcodeText.value, "LPN", 1, "N/A", "N/A"); }
+                        if (response) getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(barcodeText.value) + "&text=" + asciihex(barcodeText.value) + "&quantity=" + qty + "&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=&seq=" + genId(), "Free Print", barcodeText.value, "LPN", qty, "N/A", "N/A");
+                        else { Print_Status = "Cancelled"; sendMessageNew("Free Print", barcodeText.value, "LPN", qty, "N/A", "N/A"); }
                     } else {
-                        getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(barcodeText.value) + "&text=" + asciihex(barcodeText.value) + "&quantity=1&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=&seq=" + genId(), "Free Print", barcodeText.value, "Unknown", 1, "N/A", "N/A");
+                        getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(barcodeText.value) + "&text=" + asciihex(barcodeText.value) + "&quantity=" + qty + "&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=&seq=" + genId(), "Free Print", barcodeText.value, "Unknown", qty, "N/A", "N/A");
                     }
                 };
-                bar_panel.appendChild(bar_label); bar_panel.appendChild(FreePrintText); bar_panel.appendChild(barcodeText);
-                bar_panel.appendChild(FreePrintQuantity); bar_panel.appendChild(barcodeQuantity);
-                bar_panel.appendChild(space1); bar_panel.appendChild(buttonFPrint); bar_panel.appendChild(space); bar_panel.appendChild(buttonClose);
+                var buttonClose = document.createElement("button");
+                buttonClose.id = 'fcr-freeprint-close';
+                buttonClose.innerHTML = "✕ Fermer";
+                buttonClose.onclick = function() { bar_cover.style.display = "none"; var si = document.getElementById("search"); if (si) si.focus(); };
+                fpBtnRow.appendChild(buttonFPrint);
+                fpBtnRow.appendChild(buttonClose);
+
+                // Assemblage
+                bar_panel.appendChild(fpTitle);
+                bar_panel.appendChild(fpBarcodeLabel);
+                bar_panel.appendChild(barcodeText);
+                bar_panel.appendChild(fpQtyRow);
+                bar_panel.appendChild(fpBtnRow);
                 bar_cover.appendChild(bar_panel);
 
-                document.addEventListener("keydown", function(FreePrint) {
-                    if (FreePrint.altKey && FreePrint.key === "p") {
-                        bar_label.innerText = "Free Print"; bar_label.style.textAlign = "center"; bar_label.style.fontWeight = "bold";
-                        FreePrintText.innerText = "Barcode: "; FreePrintQuantity.innerText = "Quantity: ";
-                        barcodeQuantity.value = 1; barcodeText.value = "";
-                        bar_cover.style.display = "grid";
+                // Fermer avec Échap
+                document.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape' && bar_cover.style.display !== 'none') {
+                        bar_cover.style.display = 'none';
                     }
                 });
+
+                // Appliquer style thème au panel (appelé aussi depuis applyTheme)
+                function styleFreePrintPanel() {
+                    const t = THEMES[currentTheme] || THEMES.bleu;
+                    bar_cover.style.background = t.bg1 + 'cc';
+                    bar_panel.style.background  = t.isGradient ? t.gradPanel : t.bg2;
+                    bar_panel.style.border      = `1px solid ${t.accentDark}`;
+                    fpTitle.style.color         = t.accent;
+                    fpBarcodeLabel.style.color  = t.accent;
+                    barcodeText.style.background    = t.bg3;
+                    barcodeText.style.color         = t.isBase ? '#222' : '#d1d5db';
+                    barcodeText.style.borderColor   = t.accentDark;
+                    fpQtyLabel.style.color      = t.isBase ? '#222' : '#d1d5db';
+                    fpQtyMinus.style.background = t.bg3;
+                    fpQtyMinus.style.color      = t.accent;
+                    fpQtyMinus.style.borderColor= t.accentDark;
+                    fpQtyPlus.style.background  = t.bg3;
+                    fpQtyPlus.style.color       = t.accent;
+                    fpQtyPlus.style.borderColor = t.accentDark;
+                    fpQtyInput.style.background = t.bg3;
+                    fpQtyInput.style.color      = t.isBase ? '#222' : '#d1d5db';
+                    fpQtyInput.style.borderColor= t.accentDark;
+                    buttonFPrint.style.background   = t.isGradient ? t.gradAccent : t.accent;
+                    buttonFPrint.style.color        = t.bg1;
+                    buttonFPrint.style.boxShadow    = `0 0 10px ${t.accent}55`;
+                    buttonClose.style.background    = t.bg3;
+                    buttonClose.style.color         = t.isBase ? '#222' : '#d1d5db';
+                    buttonClose.style.border        = `1px solid ${t.accentDark}`;
+                }
+                // Enregistre le restyle pour le hook centralisé
+                window._fcrFreePrintRestyle = styleFreePrintPanel;
 
                 $(document).ready(function() {
                     document.head.appendChild(barcodeShowStyle);
                     document.body.append(bar_cover);
                     var searchProfile = document.getElementById('search-profile');
                     if (searchProfile) {
-                        searchProfile.type = "button"; searchProfile.style = "margin-right:50px"; searchProfile.value = "Print Barcode";
+                        searchProfile.type = "button";
+                        searchProfile.value = "🖶 Print Barcode";
+                        // Style thème
+                        function styleNavPrintBtn() {
+                            const t = THEMES[currentTheme] || THEMES.bleu;
+                            searchProfile.style.cssText = `margin-right:6px;padding:4px 12px;border-radius:5px;border:1px solid ${t.accentDark};background:${t.isGradient ? t.gradBtn : t.bg3};color:${t.accent};font-size:12px;font-weight:700;cursor:pointer;transition:all 0.18s;box-shadow:0 0 6px ${t.accent}33;`;
+                            searchProfile.onmouseenter = () => { searchProfile.style.background = t.accent; searchProfile.style.color = t.bg1; searchProfile.style.boxShadow = `0 0 10px ${t.accent}88`; searchProfile.style.transform = 'scale(1.05)'; };
+                            searchProfile.onmouseleave = () => { searchProfile.style.background = t.isGradient ? t.gradBtn : t.bg3; searchProfile.style.color = t.accent; searchProfile.style.boxShadow = `0 0 6px ${t.accent}33`; searchProfile.style.transform = 'scale(1)'; };
+                        }
+                        styleNavPrintBtn();
+                        window._fcrNavPrintRestyle = styleNavPrintBtn;
+
                         searchProfile.onclick = function() {
+                            const qty = Math.max(1, parseInt(navQtyInput?.value) || 1);
                             let BarcodeSearch = document.getElementById("barcodeSearchText")?.value || "";
                             if (BarcodeSearch == "") BarcodeSearch = document.getElementById("search")?.placeholder || "";
                             if (BarcodeSearch.includes("LPN")) {
                                 const response = confirm("LPN's are considered unique. OK to continue?");
-                                if (response) getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(BarcodeSearch) + "&text=" + asciihex(BarcodeSearch) + "&quantity=1&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=&seq=" + genId(), "Print Search Box", BarcodeSearch, "LPN", 1, "N/A", "N/A");
-                                else { Print_Status = "Cancelled"; sendMessageNew("Print Search Box", BarcodeSearch, "LPN", 1, "N/A", "N/A"); }
+                                if (response) getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(BarcodeSearch) + "&text=" + asciihex(BarcodeSearch) + "&quantity=" + qty + "&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=&seq=" + genId(), "Print Search Box", BarcodeSearch, "LPN", qty, "N/A", "N/A");
+                                else { Print_Status = "Cancelled"; sendMessageNew("Print Search Box", BarcodeSearch, "LPN", qty, "N/A", "N/A"); }
                             } else {
-                                getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(BarcodeSearch) + "&text=" + asciihex(BarcodeSearch) + "&quantity=1&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=&seq=" + genId(), "Print Search Box", BarcodeSearch, "Unknown", 1, "N/A", "N/A");
+                                getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(BarcodeSearch) + "&text=" + asciihex(BarcodeSearch) + "&quantity=" + qty + "&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=&seq=" + genId(), "Print Search Box", BarcodeSearch, "Unknown", qty, "N/A", "N/A");
                             }
                         };
                     }
@@ -2677,10 +2805,32 @@ table.a-bordered tr:first-child th {
                     if (searchButton) searchButton.style = "margin-left:10px";
                     var barcodeSearchText = document.createElement("input");
                     barcodeSearchText.id = "barcodeSearchText";
+
+                    // Sélecteur de quantité +/- dans la navbar
+                    var navQtyInput = null;
                     if (searchProfile) {
+                        // Wrapper quantité
+                        const navQtyWrap = document.createElement('span');
+                        navQtyWrap.style.cssText = 'display:inline-flex;align-items:center;gap:3px;margin-right:4px;vertical-align:middle;';
+
+                        navQtyInput = document.createElement('input');
+                        navQtyInput.type = 'number'; navQtyInput.min = 1; navQtyInput.value = 1;
+
+                        function styleNavQty() {
+                            const t = THEMES[currentTheme] || THEMES.bleu;
+                            navQtyInput.style.cssText = `width:42px;text-align:center;padding:2px 4px;border-radius:4px;border:1px solid ${t.accentDark};background:${t.bg3};color:${t.isBase ? '#222' : '#d1d5db'};font-size:12px;font-weight:700;`;
+                        }
+                        styleNavQty();
+                        window._fcrNavQtyRestyle = styleNavQty;
+
+                        navQtyWrap.appendChild(navQtyInput);
+
                         searchProfile.parentNode.insertBefore(barcodeSearchText, searchProfile);
                         barcodeSearchText.placeholder = "Enter barcode data"; barcodeSearchText.autocomplete = "off";
+                        // Insérer [− qty +] juste avant le bouton Print
+                        searchProfile.parentNode.insertBefore(navQtyWrap, searchProfile);
                     }
+
                     var searchForm = document.forms[0];
                     if (searchForm) {
                         searchForm.id = "SearchForm";
@@ -2689,10 +2839,27 @@ table.a-bordered tr:first-child th {
                             return true;
                         };
                     }
+
+                    // Enregistre le restyle nav pour le hook centralisé
+                    window._fcrNavPrintRestyle = styleNavPrintBtn;
+                    window._fcrNavQtyRestyle   = styleNavQty;
                 });
             }
         })();
     }
+
+    // ════════════════════════════════════════════════════════════════
+    // ===== HOOK CENTRALISÉ applyTheme — restyle tous les composants
+    // ════════════════════════════════════════════════════════════════
+    (function() {
+        const _orig = applyTheme;
+        applyTheme = function(name) {
+            _orig(name);
+            if (typeof window._fcrFreePrintRestyle === 'function') window._fcrFreePrintRestyle();
+            if (typeof window._fcrNavPrintRestyle  === 'function') window._fcrNavPrintRestyle();
+            if (typeof window._fcrNavQtyRestyle    === 'function') window._fcrNavQtyRestyle();
+        };
+    })();
 
     // ════════════════════════════════════════════════════════════════
     // ===== HAZMAT LEVEL DISPLAY =====
@@ -2964,8 +3131,8 @@ table.a-bordered tr:first-child th {
             if (!hasCsvBtn)     addCsvExportButton();
         }
         if (hasHistory && !hasHistoryBtn) addCsvHistoryButton();
-    }, 500));
-    inventoryObserver.observe(inventoryRoot, { childList: true, subtree: true });
+    }, 800)); // debounce augmenté 500→800ms
+    inventoryObserver.observe(inventoryRoot, { childList: true, subtree: true, attributes: false, characterData: false });
 
     setTimeout(() => {
         if (document.querySelector('[data-section-type="inventory"]')) { addWeightButton(); addCsvExportButton(); }
@@ -3523,7 +3690,7 @@ table.a-bordered tr:first-child th {
                         const w = window.open('', '_blank', 'width=500,height=400');
                         if (w) { w.document.write(printHTML(cssChrome, false)); w.document.close(); }
                     }
-                    setTimeout(() => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); }, 90000);
+                    setTimeout(() => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); }, 2000);
                 };
             } catch(e) {
                 const w = window.open('', '_blank', 'width=500,height=400');
@@ -3853,10 +4020,14 @@ table.a-bordered tr:first-child th {
                         rodeoCache[container] = destination || null;
                         onSuccess(destination);
                     } catch(e) {
+                        // Erreur de parsing : ne pas mettre en cache
                         onError('Erreur de parsing');
                     }
                 },
-                onerror: function() { onError('Erreur réseau'); }
+                onerror: function() {
+                    // Erreur réseau : ne pas mettre en cache pour permettre une nouvelle tentative
+                    onError('Erreur réseau');
+                }
             });
         }
 
@@ -3962,13 +4133,8 @@ table.a-bordered tr:first-child th {
                 });
             });
         }
-
-        // ── Observe la table inventory (dynamique via DataTables) ────
-        waitForKeyElements('#table-inventory tbody tr', function(jqRow) {
-            jqRow.each(function() {
-                attachTransshipmentHover(this);
-            });
-        }, false);
+        // Exposition globale pour l'observer unifié dans godModePrint
+        window.attachTransshipmentHover = attachTransshipmentHover;
 
         // Tooltip a un lien cliquable → besoin de pointer-events
         tooltip.addEventListener('mouseenter', () => {
