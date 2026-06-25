@@ -3475,9 +3475,9 @@ table.a-bordered tr:first-child th {
         margin-top:-20mm;
         margin-left:25mm;
     }
-    .etq-action { font-size:9pt;  font-weight:bold; color:#000; }
-    .etq-title  { font-size:16pt; font-weight:bold; color:#000; word-wrap:break-word; }
-    .etq-sig    { font-size:8.5pt;  font-weight:bold; color:#000; }`;
+    .etq-action { font-size:13pt;  font-weight:bold; color:#000; }
+    .etq-title  { font-size:20pt; font-weight:bold; color:#000; word-wrap:break-word; }
+    .etq-sig    { font-size:12.5pt;  font-weight:bold; color:#000; }`;
 
         let pages = '';
         for (let i = 0; i < qty; i++) {
