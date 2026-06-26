@@ -26,159 +26,162 @@
     GM_addStyle(`
         #ttin-panel {
             position:fixed; bottom:24px; right:24px; width:490px; max-height:88vh;
-            background:#111827; border:1.5px solid #1e3a5f; border-radius:14px;
-            box-shadow:0 10px 50px #000a; z-index:99999;
-            font-family:'Segoe UI',Arial,sans-serif; font-size:13px; color:#e2e8f0;
+            background:#ffffff; border:1.5px solid #d1d5db; border-radius:14px;
+            box-shadow:0 8px 32px rgba(0,0,0,0.12); z-index:99999;
+            font-family:'Segoe UI',Arial,sans-serif; font-size:13px; color:#1f2937;
             display:flex; flex-direction:column; overflow:hidden;
         }
         #ttin-panel.mini { max-height:46px; width:210px; }
         #ttin-panel.mini #ttin-body { display:none; }
         #ttin-header {
-            background:linear-gradient(90deg,#1e3a5f,#0f172a);
+            background:linear-gradient(90deg,#2563eb,#1d4ed8);
             padding:10px 14px; display:flex; align-items:center;
             justify-content:space-between; cursor:move; user-select:none;
             border-radius:12px 12px 0 0; flex-shrink:0;
         }
-        #ttin-header .htitle { font-weight:700; font-size:14px; color:#f87171; letter-spacing:.4px; }
-        #ttin-header .htitle small { color:#93c5fd; font-weight:400; font-size:11px; margin-left:7px; }
+        #ttin-header .htitle { font-weight:700; font-size:14px; color:#ffffff; letter-spacing:.4px; }
+        #ttin-header .htitle small { color:#bfdbfe; font-weight:400; font-size:11px; margin-left:7px; }
         #ttin-hbtns { display:flex; gap:5px; }
         #ttin-hbtns button {
-            background:none; border:1px solid #1e3a5f; color:#93c5fd;
+            background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:#ffffff;
             border-radius:5px; padding:2px 8px; cursor:pointer; font-size:12px;
         }
-        #ttin-hbtns button:hover { background:#1e3a5f; }
-        #ttin-body { overflow-y:auto; padding:10px 12px; flex:1; }
+        #ttin-hbtns button:hover { background:rgba(255,255,255,0.3); }
+        #ttin-body { overflow-y:auto; padding:10px 12px; flex:1; background:#f9fafb; }
         #ttin-body::-webkit-scrollbar { width:4px; }
-        #ttin-body::-webkit-scrollbar-thumb { background:#1e3a5f; border-radius:3px; }
+        #ttin-body::-webkit-scrollbar-thumb { background:#d1d5db; border-radius:3px; }
         .ttin-fcbar {
             display:flex; align-items:center; gap:6px;
-            font-size:11px; color:#93c5fd; margin-bottom:8px;
+            font-size:11px; color:#374151; margin-bottom:8px;
         }
         .ttin-fcbar input {
             width:58px; padding:3px 6px; border-radius:5px;
-            border:1px solid #1e3a5f; background:#0f172a; color:#e2e8f0;
+            border:1px solid #d1d5db; background:#ffffff; color:#1f2937;
             font-size:11px; text-transform:uppercase;
         }
         .ttin-fcbar button {
             padding:3px 9px; border-radius:5px; border:none;
-            background:#1e3a5f; color:#93c5fd; cursor:pointer; font-size:11px;
+            background:#2563eb; color:#ffffff; cursor:pointer; font-size:11px;
         }
         #ttin-floor-filter-wrap {
-            background:#0f172a; border:1px solid #1e3a5f; border-radius:8px;
+            background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;
             padding:8px 10px; margin-bottom:9px;
         }
         #ttin-floor-filter-title {
-            font-size:11px; color:#93c5fd; font-weight:700;
+            font-size:11px; color:#1d4ed8; font-weight:700;
             margin-bottom:6px;
         }
         #ttin-floor-btns { display:flex; flex-wrap:wrap; gap:5px; }
         .ttin-fbtn {
-            padding:3px 10px; border-radius:20px; border:1px solid #1e3a5f;
-            background:#111827; color:#93c5fd; font-size:11px; font-weight:600;
+            padding:3px 10px; border-radius:20px; border:1px solid #93c5fd;
+            background:#ffffff; color:#2563eb; font-size:11px; font-weight:600;
             cursor:pointer; transition:all .15s; white-space:nowrap;
         }
-        .ttin-fbtn:hover { border-color:#f87171; color:#f87171; }
-        .ttin-fbtn.active { background:#f87171; border-color:#f87171; color:#fff; }
-        .ttin-fbtn.tall { border-color:#4b8bcc; }
-        .ttin-fbtn.tall.active { background:#1e3a5f; border-color:#93c5fd; color:#fff; }
-        #ttin-floor-hint { font-size:10px; color:#4b5563; margin-top:5px; }
+        .ttin-fbtn:hover { border-color:#2563eb; color:#1d4ed8; background:#eff6ff; }
+        .ttin-fbtn.active { background:#2563eb; border-color:#2563eb; color:#fff; }
+        .ttin-fbtn.tall { border-color:#60a5fa; }
+        .ttin-fbtn.tall.active { background:#1d4ed8; border-color:#2563eb; color:#fff; }
+        #ttin-floor-hint { font-size:10px; color:#6b7280; margin-top:5px; }
         .ttin-searchbar { display:flex; gap:6px; margin-bottom:8px; }
         .ttin-searchbar input {
             flex:1; padding:5px 9px; border-radius:6px;
-            border:1px solid #1e3a5f; background:#0f172a; color:#e2e8f0;
+            border:1px solid #d1d5db; background:#ffffff; color:#1f2937;
             font-size:12px; outline:none;
         }
-        .ttin-searchbar input::placeholder { color:#4b5563; }
+        .ttin-searchbar input:focus { border-color:#2563eb; box-shadow:0 0 0 2px #bfdbfe; }
+        .ttin-searchbar input::placeholder { color:#9ca3af; }
         .ttin-searchbar button {
             padding:5px 12px; border-radius:6px; border:none;
-            background:#f87171; color:#fff; font-weight:700; cursor:pointer; font-size:12px;
+            background:#2563eb; color:#fff; font-weight:700; cursor:pointer; font-size:12px;
         }
-        .ttin-searchbar button:hover { background:#ef4444; }
+        .ttin-searchbar button:hover { background:#1d4ed8; }
         #ttin-scan-btn {
             width:100%; padding:7px; border-radius:7px; border:none;
-            background:linear-gradient(90deg,#1e3a5f,#f87171);
+            background:linear-gradient(90deg,#2563eb,#3b82f6);
             color:#fff; font-weight:700; font-size:12px; cursor:pointer;
             margin-bottom:10px; letter-spacing:.4px;
         }
-        #ttin-scan-btn:hover { opacity:.85; }
+        #ttin-scan-btn:hover { opacity:.88; }
         .ttin-card {
-            background:#1f2937; border:1px solid #1e3a5f;
+            background:#ffffff; border:1px solid #e5e7eb;
             border-radius:9px; margin-bottom:9px; overflow:hidden;
+            box-shadow:0 1px 4px rgba(0,0,0,0.06);
         }
         .ttin-card-head {
             display:flex; align-items:center; justify-content:space-between;
-            padding:7px 11px; cursor:pointer; background:#1e3a5f;
+            padding:7px 11px; cursor:pointer; background:#eff6ff;
+            border-bottom:1px solid #bfdbfe;
         }
-        .ttin-card-head:hover { background:#263f60; }
-        .ttin-card-asin { font-weight:700; color:#f87171; font-size:13px; }
+        .ttin-card-head:hover { background:#dbeafe; }
+        .ttin-card-asin { font-weight:700; color:#1d4ed8; font-size:13px; }
         .ttin-card-sub {
-            font-size:10px; color:#93c5fd; margin-left:7px;
+            font-size:10px; color:#4b5563; margin-left:7px;
             max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
         }
-        .ttin-card-tog { color:#93c5fd; font-size:12px; flex-shrink:0; }
-        .ttin-card-body { padding:8px 10px; display:none; }
+        .ttin-card-tog { color:#6b7280; font-size:12px; flex-shrink:0; }
+        .ttin-card-body { padding:8px 10px; display:none; background:#ffffff; }
         .ttin-card-body.open { display:block; }
-        .ttin-stock { font-size:11px; color:#93c5fd; margin-bottom:6px; }
+        .ttin-stock { font-size:11px; color:#374151; margin-bottom:6px; }
         .ttin-progress-wrap {
-            background:#0f172a; border-radius:4px; height:5px;
+            background:#e5e7eb; border-radius:4px; height:5px;
             margin-bottom:7px; overflow:hidden;
         }
-        .ttin-progress-bar { height:5px; background:#f87171; border-radius:4px; transition:width .3s; }
+        .ttin-progress-bar { height:5px; background:#2563eb; border-radius:4px; transition:width .3s; }
         .ttin-floor { margin-bottom:8px; }
         .ttin-floor-lbl {
-            font-weight:700; color:#f87171; font-size:12px;
+            font-weight:700; color:#1d4ed8; font-size:12px;
             margin-bottom:3px; display:flex; align-items:center; gap:7px;
         }
-        .ttin-floor-quota { font-size:10px; font-weight:400; color:#93c5fd; }
+        .ttin-floor-quota { font-size:10px; font-weight:400; color:#6b7280; }
         .ttin-bin {
             display:flex; align-items:center; justify-content:space-between;
             padding:2px 6px; border-radius:4px; font-size:11px;
-            margin-bottom:2px; background:#111827;
+            margin-bottom:2px; background:#f9fafb; border:1px solid #f3f4f6;
         }
-        .ttin-bin:hover { background:#1e3a5f; }
-        .ttin-bin-name { color:#e2e8f0; font-family:monospace; }
+        .ttin-bin:hover { background:#eff6ff; border-color:#bfdbfe; }
+        .ttin-bin-name { color:#1f2937; font-family:monospace; }
         .ttin-bin-loc { color:#6b7280; font-size:10px; margin-left:4px; }
         .ttin-bin-qty {
-            background:#f87171; color:#fff; border-radius:4px;
+            background:#2563eb; color:#fff; border-radius:4px;
             padding:1px 6px; font-size:10px; font-weight:700; flex-shrink:0;
         }
         .ttin-loading {
-            color:#93c5fd; font-size:11px; padding:5px 2px;
+            color:#2563eb; font-size:11px; padding:5px 2px;
             display:flex; align-items:center; gap:6px;
         }
         .ttin-loading::before {
             content:''; width:11px; height:11px;
-            border:2px solid #93c5fd; border-top-color:#f87171;
+            border:2px solid #bfdbfe; border-top-color:#2563eb;
             border-radius:50%; display:inline-block;
             animation:ttin-spin .7s linear infinite;
         }
         @keyframes ttin-spin { to { transform:rotate(360deg); } }
-        .ttin-err   { color:#f87171; font-size:11px; padding:4px 2px; }
-        .ttin-empty { color:#4b5563; font-size:11px; padding:4px 2px; }
+        .ttin-err   { color:#dc2626; font-size:11px; padding:4px 2px; }
+        .ttin-empty { color:#6b7280; font-size:11px; padding:4px 2px; }
         .ttin-warn  {
-            color:#f87171; font-size:11px; background:#1f2937;
-            border-radius:6px; padding:6px 10px; margin-bottom:8px;
+            color:#b45309; font-size:11px; background:#fffbeb;
+            border:1px solid #fde68a; border-radius:6px; padding:6px 10px; margin-bottom:8px;
         }
-        .ttin-hint { font-size:10px; color:#4b5563; text-align:center; margin-bottom:4px; }
+        .ttin-hint { font-size:10px; color:#9ca3af; text-align:center; margin-bottom:4px; }
 
         #ttin-type-filter-wrap {
-            background:#0f172a; border:1px solid #1e3a5f; border-radius:8px;
+            background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px;
             padding:8px 10px; margin-bottom:9px;
         }
-        #ttin-type-filter-title { font-size:11px; color:#93c5fd; font-weight:700; margin-bottom:6px; }
+        #ttin-type-filter-title { font-size:11px; color:#15803d; font-weight:700; margin-bottom:6px; }
         #ttin-type-btns { display:flex; flex-wrap:wrap; gap:5px; }
         .ttin-type-btn {
-            padding:3px 10px; border-radius:20px; border:1px solid #1e3a5f;
-            background:#111827; color:#93c5fd; font-size:11px; font-weight:600;
+            padding:3px 10px; border-radius:20px; border:1px solid #86efac;
+            background:#ffffff; color:#16a34a; font-size:11px; font-weight:600;
             cursor:pointer; transition:all .15s; white-space:nowrap;
         }
-        .ttin-type-btn:hover { border-color:#f87171; color:#f87171; }
-        .ttin-type-btn.active { background:#f87171; border-color:#f87171; color:#fff; }
+        .ttin-type-btn:hover { border-color:#16a34a; background:#f0fdf4; }
+        .ttin-type-btn.active { background:#16a34a; border-color:#16a34a; color:#fff; }
         .ttin-card.hidden { display:none; }
         .ttin-bin-actions { display:flex; align-items:center; gap:5px; flex-shrink:0; }
         .ttin-copy-btn {
             padding:1px 7px; border-radius:4px; border:none;
-            background:#1e3a5f; color:#93c5fd; font-size:10px; cursor:pointer;
+            background:#e5e7eb; color:#374151; font-size:10px; cursor:pointer;
             transition:all .15s; white-space:nowrap;
         }
         .ttin-copy-btn:hover { background:#22c55e; color:#fff; }
@@ -186,13 +189,13 @@
         .ttin-qr-trigger {
             display:inline-flex; align-items:center;
             padding:1px 7px; border-radius:4px; border:none;
-            background:#0f172a; color:#93c5fd; font-size:10px; cursor:default;
+            background:#f3f4f6; color:#374151; font-size:10px; cursor:default;
             white-space:nowrap; user-select:none;
         }
         #ttin-qr-bubble {
             display:none; position:fixed;
             background:#fff; border-radius:8px; padding:8px;
-            box-shadow:0 4px 24px #000d; z-index:9999999;
+            box-shadow:0 4px 24px rgba(0,0,0,0.15); z-index:9999999;
             pointer-events:none;
         }
         #ttin-qr-bubble::after {
@@ -235,7 +238,7 @@
             '<div class="ttin-fcbar">' +
                 'FC: <input id="ttin-fc-inp" maxlength="6" />' +
                 '<button id="ttin-fc-ok">\u2713</button>' +
-                '<button id="ttin-debug-btn" title="Debug: voir les réponses FCResearch dans la console" style="background:#1e3a5f;border:1px solid #f87171;color:#f87171;border-radius:5px;padding:2px 7px;cursor:pointer;font-size:11px;">🔍</button>' +
+                '<button id="ttin-debug-btn" title="Debug: voir les réponses FCResearch dans la console" style="background:#fef3c7;border:1px solid #f59e0b;color:#92400e;border-radius:5px;padding:2px 7px;cursor:pointer;font-size:11px;">🔍</button>' +
                 '<span id="ttin-fc-lbl" style="margin-left:4px;color:#4b5563;"></span>' +
             '</div>' +
             '<div id="ttin-floor-filter-wrap">' +
