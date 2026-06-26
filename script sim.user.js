@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         TTIN Floor Sweep — T.corp Panel
-// @version      5.5.0
+// @version      5.5.9
 // @description  Panneau flottant T.corp : bins par etage (5% stock), filtre etage avant recherche, etage via FCResearch, QR hover tooltip.
 // @author       @JEANBAYD
 // @match        https://t.corp.amazon.com/*
@@ -10,6 +10,7 @@
 // @grant        GM_setValue
 // @run-at       document-end
 // @connect      fcresearch-eu.aka.amazon.com
+// @connect      qi-fcresearch-eu.corp.amazon.com
 // @connect      barcodeapi.org
 
 // ==/UserScript==
@@ -234,6 +235,7 @@
             '<div class="ttin-fcbar">' +
                 'FC: <input id="ttin-fc-inp" maxlength="6" />' +
                 '<button id="ttin-fc-ok">\u2713</button>' +
+                '<button id="ttin-debug-btn" title="Debug: voir les réponses FCResearch dans la console" style="background:#1e3a5f;border:1px solid #f87171;color:#f87171;border-radius:5px;padding:2px 7px;cursor:pointer;font-size:11px;">🔍</button>' +
                 '<span id="ttin-fc-lbl" style="margin-left:4px;color:#4b5563;"></span>' +
             '</div>' +
             '<div id="ttin-floor-filter-wrap">' +
@@ -438,6 +440,11 @@
     panel.querySelector('#ttin-fc-ok').onclick = function() {
         var v = panel.querySelector('#ttin-fc-inp').value.trim().toUpperCase();
         if (v) { currentFC = v; GM_setValue('ttin_fc', v); panel.querySelector('#ttin-fc-lbl').textContent = v; }
+    };
+    panel.querySelector('#ttin-debug-btn').onclick = function() {
+        var bin = panel.querySelector('#ttin-asin-inp').value.trim().toUpperCase() || 'P-8-H662E907';
+        alert('[TTIN DEBUG] Ouvre la console (F12) — test sur bin: ' + bin + ' / FC: ' + currentFC);
+        debugBin(bin, currentFC);
     };
     panel.querySelector('#ttin-go').onclick = function() {
         var asin = panel.querySelector('#ttin-asin-inp').value.trim().toUpperCase();
@@ -647,7 +654,30 @@
         return raw;
     }
 
-    // ── Copier dans le presse-papier ─────────────────────────────────────────
+    // ── DEBUG : log ce que FCResearch renvoie pour un bin donné ─────────────
+    function debugBin(bin, fc) {
+        var endpoints = [
+            FCR_BASE + '/' + fc + '/api/container?id=' + encodeURIComponent(bin),
+            FCR_BASE + '/' + fc + '/api/bin?id=' + encodeURIComponent(bin),
+            FCR_BASE + '/' + fc + '/api/location?containerId=' + encodeURIComponent(bin),
+            FCR_BASE + '/' + fc + '/results?s=' + encodeURIComponent(bin),
+        ];
+        console.group('[TTIN DEBUG] Bin: ' + bin + ' / FC: ' + fc);
+        endpoints.forEach(function(url) {
+            GM_xmlhttpRequest({
+                method: 'GET', url: url, withCredentials: true,
+                headers: { 'Accept': 'application/json, text/plain, */*' },
+                onload: function(r) {
+                    console.log('URL:', url);
+                    console.log('Status:', r.status, '| Length:', r.responseText.length);
+                    console.log('Début réponse:', r.responseText.slice(0, 500));
+                    console.groupEnd();
+                },
+                onerror: function() { console.log('URL:', url, '→ ERREUR RÉSEAU'); }
+            });
+        });
+    }
+
     function copyBin(binCode, btn) {
         navigator.clipboard.writeText(binCode).then(function() {
             btn.textContent = '\u2713 Copi\u00e9';
@@ -675,66 +705,62 @@
     }
 
     // ── Résolution étage via FCResearch ──────────────────────────────────────
-    // URL: https://fcresearch-eu.aka.amazon.com/{FC}/results?s={BIN}
-    // Parse : Détail du conteneur > Propriétés du casier > Emplacement > Lieu
+    // Endpoint confirmé : POST /ETZ2/results/container-hierarchy
+    // Body : Form Data  s=P-8-H662E907
+    // Règle étage : dz-P-A02 → 2 / dz-P-A03 → 3 / dz-P-A04 → 4
     function fetchFloorFromFCR(b, fc, done) {
-        var url = FCR_BASE + '/' + encodeURIComponent(fc) + '/results?s=' + encodeURIComponent(b.bin);
+        var url = FCR_BASE + '/' + fc + '/results/container-hierarchy';
         GM_xmlhttpRequest({
-            method: 'GET',
+            method: 'POST',
             url: url,
             withCredentials: true,
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            data: 's=' + encodeURIComponent(b.bin),
             onload: function(resp) {
-                try {
-                    var doc = new DOMParser().parseFromString(resp.responseText, 'text/html');
-                    var empl = extractEmplacement(doc);
-                    if (empl) {
-                        parseEmplacement(empl, b);
-                    } else {
-                        b.floor = 'Inconnu';
-                    }
-                } catch(e) { b.floor = 'Inconnu'; }
+                var floor = extractFloorFromText(resp.responseText);
+                b.floor = floor || 'Inconnu';
+                if (floor) {
+                    var mFull = resp.responseText.replace(/\s+/g, ' ').match(/Lieu\s*:\s*\d[^<]{0,100}/i);
+                    if (mFull) parseEmplacement(mFull[0], b);
+                }
                 done();
             },
             onerror: function() { b.floor = 'Inconnu'; done(); }
         });
     }
 
-    // Parse la page FCResearch — section "Propriétés du casier" > ligne "Emplacement"
-    // Valeur attendue : "Lieu: 3, Allée: 1, Étagère: F, Emplacement: 88"
-    function extractEmplacement(doc) {
-        // Stratégie 1 : ligne de tableau avec label "Emplacement" (structure verte FCResearch)
-        var rows = doc.querySelectorAll('tr');
-        for (var i = 0; i < rows.length; i++) {
-            var cells = rows[i].querySelectorAll('td');
-            if (cells.length >= 2 && /^emplacement$/i.test(cells[0].textContent.trim())) {
-                return cells[1].textContent.trim();
-            }
-        }
-        // Stratégie 2 : regex dans tout le texte de la page
-        var m = doc.body.textContent.match(/Lieu\s*:\s*(\d+)/i);
-        if (m) return 'Lieu: ' + m[1];
+    // Extrait l'étage depuis le texte brut HTML
+    // Priorité 1 : "Lieu: X"
+    // Priorité 2 : "dz-P-A0X" → chiffre final
+    function extractFloorFromText(text) {
+        if (!text) return null;
+        var t = text.replace(/\s+/g, ' ');
+        var mLieu = t.match(/Lieu\s*:\s*(\d+)/i);
+        if (mLieu) return String(parseInt(mLieu[1], 10));
+        var mZone = t.match(/dz-[A-Z]-[A-Za-z]+?0*(\d+)/i);
+        if (mZone) return String(parseInt(mZone[1], 10));
         return null;
     }
 
     // Extrait l'étage depuis "Lieu: 3, Allée: 1, Étagère: F, Emplacement: 88"
     // et remplit aussi aisle/shelf/slot sur l'objet bin
     function parseEmplacement(txt, b) {
-        // Lieu
+        // Lieu → étage normalisé (trim + parseInt pour éviter " 2" != "2")
         var mLieu = txt.match(/Lieu\s*:\s*(\d+)/i);
-        if (mLieu) b.floor = mLieu[1];
+        if (mLieu) b.floor = String(parseInt(mLieu[1].trim(), 10));
         else b.floor = 'Inconnu';
 
         // Allée
         var mAl = txt.match(/All[ée]e?\s*:\s*([^\s,]+)/i);
-        if (mAl) b.aisle = mAl[1];
+        if (mAl) b.aisle = mAl[1].trim();
 
         // Étagère
         var mEt = txt.match(/[ÉE]tag[eè]re?\s*:\s*([^\s,]+)/i);
-        if (mEt) b.shelf = mEt[1];
+        if (mEt) b.shelf = mEt[1].trim();
 
-        // Emplacement (slot)
-        var mSl = txt.match(/Emplacement\s*:\s*([^\s,]+)/i);
-        if (mSl) b.slot = mSl[1];
+        // Emplacement (slot) — uniquement si valeur numérique pour éviter collision label
+        var mSl = txt.match(/Emplacement\s*:\s*(\d+)/i);
+        if (mSl) b.slot = mSl[1].trim();
     }
 
     function resolveFloors(bins, fc, floorFilter, onProgress, onDone) {
