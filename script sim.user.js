@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TTIN Floor Sweep — T.corp Panel
-// @version      3.1.0
-// @description  Panneau flottant T.corp : bins par etage (5% stock), filtre etage avant recherche, requetes Roboscout limitees.
+// @version      5.5.0
+// @description  Panneau flottant T.corp : bins par etage (5% stock), filtre etage avant recherche, etage via FCResearch, QR hover tooltip.
 // @author       @JEANBAYD
 // @match        https://t.corp.amazon.com/*
 // @grant        GM_addStyle
@@ -10,17 +10,16 @@
 // @grant        GM_setValue
 // @run-at       document-end
 // @connect      fcresearch-eu.aka.amazon.com
-// @connect      roboscout.amazon.com
-// @connect      localhost
+// @connect      barcodeapi.org
+
 // ==/UserScript==
 
 (function () {
     'use strict';
 
     const FCR_BASE  = 'https://fcresearch-eu.aka.amazon.com';
-    const ROBO_BASE = 'https://roboscout.amazon.com';
     const PCT_MAX   = 0.05;
-    const ROBO_CONCURRENCY = 5;
+    const FCR_CONCURRENCY = 5;
     const KNOWN_FLOORS = ['2','3','4'];
 
     GM_addStyle(`
@@ -161,11 +160,6 @@
         }
         .ttin-hint { font-size:10px; color:#4b5563; text-align:center; margin-bottom:4px; }
 
-        .ttin-print-floor {
-            margin-left:auto; padding:2px 8px; border-radius:4px; border:none;
-            background:#1e3a5f; color:#93c5fd; font-size:10px; cursor:pointer; white-space:nowrap;
-        }
-        .ttin-print-floor:hover { background:#f87171; color:#fff; }
         #ttin-type-filter-wrap {
             background:#0f172a; border:1px solid #1e3a5f; border-radius:8px;
             padding:8px 10px; margin-bottom:9px;
@@ -180,13 +174,35 @@
         .ttin-type-btn:hover { border-color:#f87171; color:#f87171; }
         .ttin-type-btn.active { background:#f87171; border-color:#f87171; color:#fff; }
         .ttin-card.hidden { display:none; }
+        .ttin-bin-actions { display:flex; align-items:center; gap:5px; flex-shrink:0; }
+        .ttin-copy-btn {
+            padding:1px 7px; border-radius:4px; border:none;
+            background:#1e3a5f; color:#93c5fd; font-size:10px; cursor:pointer;
+            transition:all .15s; white-space:nowrap;
+        }
+        .ttin-copy-btn:hover { background:#22c55e; color:#fff; }
+        .ttin-copy-btn.copied { background:#22c55e; color:#fff; }
+        .ttin-qr-trigger {
+            display:inline-flex; align-items:center;
+            padding:1px 7px; border-radius:4px; border:none;
+            background:#0f172a; color:#93c5fd; font-size:10px; cursor:default;
+            white-space:nowrap; user-select:none;
+        }
+        #ttin-qr-bubble {
+            display:none; position:fixed;
+            background:#fff; border-radius:8px; padding:8px;
+            box-shadow:0 4px 24px #000d; z-index:9999999;
+            pointer-events:none;
+        }
+        #ttin-qr-bubble::after {
+            content:''; position:absolute; top:100%; left:50%; transform:translateX(-50%);
+            border:7px solid transparent; border-top-color:#fff;
+        }
     `);
 
     let currentFC     = GM_getValue('ttin_fc', 'ETZ2');
     let selectedFloor = GM_getValue('ttin_floor', 'ALL');
     let selectedType  = 'ALL';
-    // isPrinting supprimé — l'impression iframe ne bloque plus Roboscout
-
     // Types de tickets T.corp reconnus — ordre d'affichage
     var TICKET_TYPES = [
         { key: 'TTIN',       label: 'TTIN',        pattern: /\bTTIN\b/i },
@@ -238,11 +254,98 @@
         '</div>';
     document.body.appendChild(panel);
 
+    // ── Code 128B — générateur SVG local (aucun appel réseau) ───────────────
+    var C128 = (function() {
+        // Valeurs des barres pour chaque caractère Code 128B (encodage 6-éléments)
+        var BARS = [
+            '212222','222122','222221','121223','121322','131222','122213','122312',
+            '132212','221213','221312','231212','112232','122132','122231','113222',
+            '123122','123221','223211','221132','221231','213212','223112','312131',
+            '311222','321122','321221','312212','322112','322211','212123','212321',
+            '232121','111323','131123','131321','112313','132113','132311','211313',
+            '231113','231311','112133','112331','132131','113123','113321','133121',
+            '313121','211331','231131','213113','213311','213131','311123','311321',
+            '331121','312113','312311','332111','314111','221411','431111','111224',
+            '111422','121124','121421','141122','141221','112214','112412','122114',
+            '122411','142112','142211','241211','221114','413111','241112','134111',
+            '111242','121142','121241','114212','124112','124211','411212','421112',
+            '421211','212141','214121','412121','111143','111341','131141','114113',
+            '114311','411113','411311','113141','114131','311141','411131','211412',
+            '211214','211232','2331112'
+        ];
+        // START B = index 104, STOP = index 106
+        var START_B = 104, STOP = 106;
+
+        function encode(text) {
+            var codes = [START_B];
+            var check = START_B;
+            for (var i = 0; i < text.length; i++) {
+                var c = text.charCodeAt(i) - 32; // Code 128B : ASCII 32-127
+                if (c < 0 || c > 94) c = 0;     // remplace les inconnus par espace
+                codes.push(c);
+                check += c * (i + 1);
+            }
+            codes.push(check % 103); // checksum
+            codes.push(STOP);
+            return codes;
+        }
+
+        function makeSVG(text) {
+            var codes  = encode(text);
+            var bars   = codes.map(function(c) { return BARS[c]; }).join('');
+            var W = 2, H = 60, pad = 10;
+            var totalW = 0;
+            for (var i = 0; i < bars.length; i++) totalW += parseInt(bars[i]) * W;
+            var svgW = totalW + pad * 2;
+            var rects = '';
+            var x = pad, dark = true;
+            for (var j = 0; j < bars.length; j++) {
+                var w = parseInt(bars[j]) * W;
+                if (dark) rects += '<rect x="' + x + '" y="4" width="' + w + '" height="' + H + '" fill="#000"/>';
+                x += w;
+                dark = !dark;
+            }
+            // Texte centré sous le code-barres
+            rects += '<text x="' + (svgW/2) + '" y="' + (H+18) + '" font-family="monospace" font-size="11" text-anchor="middle" fill="#000">' + text + '</text>';
+            return '<svg xmlns="http://www.w3.org/2000/svg" width="' + svgW + '" height="' + (H+24) + '">'
+                 + '<rect width="' + svgW + '" height="' + (H+24) + '" fill="#fff"/>'
+                 + rects + '</svg>';
+        }
+
+        return { makeSVG: makeSVG };
+    })();
+
+    // ── Bulle code-barres (SVG local) ────────────────────────────────────────
+    var qrBubble = document.createElement('div');
+    qrBubble.id = 'ttin-qr-bubble';
+    qrBubble.style.cssText = 'display:none;position:fixed;background:#fff;border-radius:8px;padding:8px;box-shadow:0 4px 24px #000d;z-index:9999999;pointer-events:none;';
+    document.body.appendChild(qrBubble);
+    var qrHideTimer = null;
+
+    function showQRBubble(trigger, binCode) {
+        clearTimeout(qrHideTimer);
+        qrBubble.innerHTML = C128.makeSVG(binCode);
+        qrBubble.style.display = 'block';
+        var r  = trigger.getBoundingClientRect();
+        var bw = qrBubble.offsetWidth || 260;
+        var bh = qrBubble.offsetHeight || 100;
+        // Aligne le bord gauche de la bulle sur le bord gauche du bouton CB
+        var left = r.left;
+        var top  = r.top - bh - 6;
+        if (top < 4) top = r.bottom + 6;
+        if (left + bw > window.innerWidth - 4) left = window.innerWidth - bw - 4;
+        if (left < 4) left = 4;
+        qrBubble.style.left = left + 'px';
+        qrBubble.style.top  = top  + 'px';
+    }
+
+    function hideQRBubble() {
+        qrHideTimer = setTimeout(function() { qrBubble.style.display = 'none'; }, 80);
+    }
+
     // Init valeurs
     panel.querySelector('#ttin-fc-inp').value = currentFC;
     panel.querySelector('#ttin-fc-lbl').textContent = currentFC;
-
-
     function buildTypeButtons(presentTypes) {
         var wrap = panel.querySelector('#ttin-type-btns');
         wrap.innerHTML = '';
@@ -341,7 +444,7 @@
         if (!asin) return;
         var area = panel.querySelector('#ttin-area');
         area.innerHTML = '';
-        analyzeASIN(asin, asin, area);
+        analyzeASIN(asin, asin, '', area);
     };
     panel.querySelector('#ttin-scan-btn').onclick = scanPage;
 
@@ -356,19 +459,28 @@
         selectedType = 'ALL'; // reset filtre type à chaque scan
         var found = new Map();
 
-        // Stratégie 1 : lignes de tableau — cherche le titre dans la même ligne que l'ASIN
+        // Stratégie 1 : lignes de tableau — cherche le titre + lien ticket dans la même ligne
         document.querySelectorAll('table tbody tr').forEach(function(row) {
             var rowText = row.textContent;
             var asin = extractASIN(rowText);
             if (asin && !found.has(asin)) {
-                // Prend le texte le plus long de la ligne comme titre (évite la cellule ASIN seule)
-                var best = '';
+                var best = '', ticketId = '';
                 row.querySelectorAll('td, a').forEach(function(el) {
                     var t = el.textContent.trim();
                     if (t.length > best.length && !extractASIN(t)) best = t;
+                    // Cherche un lien ticket t.corp (V..., D..., P..., etc.)
+                    if (el.tagName === 'A' && el.href) {
+                        var m = el.href.match(/t\.corp\.amazon\.com\/([A-Z]\d+)/);
+                        if (m) ticketId = m[1];
+                    }
                 });
+                // Cherche aussi dans le texte brut de la ligne
+                if (!ticketId) {
+                    var m2 = rowText.match(/\b([A-Z]\d{7,})\b/);
+                    if (m2) ticketId = m2[1];
+                }
                 var title = best || rowText.trim();
-                found.set(asin, title.length > 80 ? title.slice(0, 80) + '\u2026' : title);
+                found.set(asin, { title: title.length > 80 ? title.slice(0, 80) + '\u2026' : title, ticketId: ticketId });
             }
         });
 
@@ -377,7 +489,16 @@
             var text = el.textContent.trim();
             var asin = extractASIN(text);
             if (asin && !found.has(asin)) {
-                found.set(asin, text.length > 80 ? text.slice(0, 80) + '\u2026' : text);
+                var ticketId = '';
+                if (el.href) {
+                    var m = el.href.match(/t\.corp\.amazon\.com\/([A-Z]\d+)/);
+                    if (m) ticketId = m[1];
+                }
+                if (!ticketId) {
+                    var m2 = text.match(/\b([A-Z]\d{7,})\b/);
+                    if (m2) ticketId = m2[1];
+                }
+                found.set(asin, { title: text.length > 80 ? text.slice(0, 80) + '\u2026' : text, ticketId: ticketId });
             }
         });
 
@@ -392,8 +513,10 @@
 
         var asinQueue = [];
         var presentTypes = [];
-        found.forEach(function(title, asin) {
-            asinQueue.push({ asin: asin, title: title });
+        found.forEach(function(info, asin) {
+            var title    = typeof info === 'string' ? info : info.title;
+            var ticketId = typeof info === 'string' ? '' : (info.ticketId || '');
+            asinQueue.push({ asin: asin, title: title, ticketId: ticketId });
             var t = getTicketType(title);
             if (presentTypes.indexOf(t) === -1) presentTypes.push(t);
         });
@@ -406,7 +529,7 @@
             while (asinActive < ASIN_CONCURRENCY && asinIdx < asinQueue.length) {
                 var item = asinQueue[asinIdx++];
                 asinActive++;
-                analyzeASIN(item.asin, item.title, area, function() {
+                analyzeASIN(item.asin, item.title, item.ticketId, area, function() {
                     asinActive--;
                     nextASIN();
                 });
@@ -415,7 +538,7 @@
         nextASIN();
     }
 
-    function analyzeASIN(asin, title, container, onDone) {
+    function analyzeASIN(asin, title, ticketId, container, onDone) {
         var card = document.createElement('div');
         card.className = 'ttin-card';
         card.dataset.ticketType = getTicketType(title);
@@ -426,12 +549,31 @@
 
         var head = document.createElement('div');
         head.className = 'ttin-card-head';
-        head.innerHTML =
-            '<div style="display:flex;align-items:center;min-width:0">' +
-                '<span class="ttin-card-asin">' + esc(asin) + '</span>' +
-                '<span class="ttin-card-sub">' + esc(title) + '</span>' +
-            '</div>' +
-            '<span class="ttin-card-tog">\u25bc</span>';
+
+        var headLeft = document.createElement('div');
+        headLeft.style.cssText = 'display:flex;align-items:center;min-width:0;gap:6px;';
+        headLeft.innerHTML =
+            '<span class="ttin-card-asin">' + esc(asin) + '</span>' +
+            '<span class="ttin-card-sub">' + esc(title) + '</span>';
+
+        // Bouton ticket t.corp
+        if (ticketId) {
+            var ticketBtn = document.createElement('a');
+            ticketBtn.href = 'https://t.corp.amazon.com/' + ticketId;
+            ticketBtn.target = '_blank';
+            ticketBtn.rel = 'noopener noreferrer';
+            ticketBtn.textContent = '🎫 ' + ticketId;
+            ticketBtn.style.cssText = 'flex-shrink:0;padding:1px 7px;border-radius:4px;background:#1e3a5f;color:#93c5fd;font-size:10px;text-decoration:none;white-space:nowrap;';
+            ticketBtn.onclick = function(e) { e.stopPropagation(); };
+            headLeft.appendChild(ticketBtn);
+        }
+
+        var headTog = document.createElement('span');
+        headTog.className = 'ttin-card-tog';
+        headTog.textContent = '\u25bc';
+
+        head.appendChild(headLeft);
+        head.appendChild(headTog);
 
         var body = document.createElement('div');
         body.className = 'ttin-card-body open';
@@ -505,70 +647,131 @@
         return raw;
     }
 
-    // Imprime les bins ZPL sur la Zebra via port 9100
-    // ── Utilitaires Printmon (même méthode que FCRSWEEP) ──────────────────────
-    function getCookie(c) {
-        var cookies = document.cookie.split(";");
-        for (var i = 0; i < cookies.length; i++) {
-            if (cookies[i].includes(c)) return cookies[i].substring(cookies[i].indexOf("=") + 1);
+    // ── Copier dans le presse-papier ─────────────────────────────────────────
+    function copyBin(binCode, btn) {
+        navigator.clipboard.writeText(binCode).then(function() {
+            btn.textContent = '\u2713 Copi\u00e9';
+            btn.classList.add('copied');
+            setTimeout(function() {
+                btn.textContent = '\uD83D\uDCCB Copier';
+                btn.classList.remove('copied');
+            }, 1500);
+        }).catch(function() {
+            // Fallback si clipboard API indisponible
+            var ta = document.createElement('textarea');
+            ta.value = binCode;
+            ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            btn.textContent = '\u2713 Copi\u00e9';
+            btn.classList.add('copied');
+            setTimeout(function() {
+                btn.textContent = '\uD83D\uDCCB Copier';
+                btn.classList.remove('copied');
+            }, 1500);
+        });
+    }
+
+    // ── Résolution étage via FCResearch ──────────────────────────────────────
+    // URL: https://fcresearch-eu.aka.amazon.com/{FC}/results?s={BIN}
+    // Parse : Détail du conteneur > Propriétés du casier > Emplacement > Lieu
+    function fetchFloorFromFCR(b, fc, done) {
+        var url = FCR_BASE + '/' + encodeURIComponent(fc) + '/results?s=' + encodeURIComponent(b.bin);
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: url,
+            withCredentials: true,
+            onload: function(resp) {
+                try {
+                    var doc = new DOMParser().parseFromString(resp.responseText, 'text/html');
+                    var empl = extractEmplacement(doc);
+                    if (empl) {
+                        parseEmplacement(empl, b);
+                    } else {
+                        b.floor = 'Inconnu';
+                    }
+                } catch(e) { b.floor = 'Inconnu'; }
+                done();
+            },
+            onerror: function() { b.floor = 'Inconnu'; done(); }
+        });
+    }
+
+    // Parse la page FCResearch — section "Propriétés du casier" > ligne "Emplacement"
+    // Valeur attendue : "Lieu: 3, Allée: 1, Étagère: F, Emplacement: 88"
+    function extractEmplacement(doc) {
+        // Stratégie 1 : ligne de tableau avec label "Emplacement" (structure verte FCResearch)
+        var rows = doc.querySelectorAll('tr');
+        for (var i = 0; i < rows.length; i++) {
+            var cells = rows[i].querySelectorAll('td');
+            if (cells.length >= 2 && /^emplacement$/i.test(cells[0].textContent.trim())) {
+                return cells[1].textContent.trim();
+            }
         }
-        return "";
+        // Stratégie 2 : regex dans tout le texte de la page
+        var m = doc.body.textContent.match(/Lieu\s*:\s*(\d+)/i);
+        if (m) return 'Lieu: ' + m[1];
+        return null;
     }
 
-    function genId() {
-        var id1 = "";
-        for (var i = 0; i < 10; i++) id1 += Math.floor(Math.random() * 9);
-        return id1;
+    // Extrait l'étage depuis "Lieu: 3, Allée: 1, Étagère: F, Emplacement: 88"
+    // et remplit aussi aisle/shelf/slot sur l'objet bin
+    function parseEmplacement(txt, b) {
+        // Lieu
+        var mLieu = txt.match(/Lieu\s*:\s*(\d+)/i);
+        if (mLieu) b.floor = mLieu[1];
+        else b.floor = 'Inconnu';
+
+        // Allée
+        var mAl = txt.match(/All[ée]e?\s*:\s*([^\s,]+)/i);
+        if (mAl) b.aisle = mAl[1];
+
+        // Étagère
+        var mEt = txt.match(/[ÉE]tag[eè]re?\s*:\s*([^\s,]+)/i);
+        if (mEt) b.shelf = mEt[1];
+
+        // Emplacement (slot)
+        var mSl = txt.match(/Emplacement\s*:\s*([^\s,]+)/i);
+        if (mSl) b.slot = mSl[1];
     }
 
-    function asciihex(str) {
-        var text1 = "";
-        for (var i = 0, l = str.length; i < l; i++) text1 += Number(str.charCodeAt(i)).toString(16);
-        return text1;
-    }
+    function resolveFloors(bins, fc, floorFilter, onProgress, onDone) {
+        var resolved = 0;
+        var total = bins.length;
 
-    function showPrintToast(msg, isSuccess) {
-        var existing = document.getElementById('ttin-print-toast');
-        if (existing) existing.remove();
-        var bg = isSuccess === true ? '#27ae60' : isSuccess === false ? '#e74c3c' : '#e67e22';
-        var toast = document.createElement('div');
-        toast.id = 'ttin-print-toast';
-        toast.style.cssText = 'position:fixed;bottom:82px;left:50%;transform:translateX(-50%);'
-            + 'background:' + bg + ';color:#fff;padding:10px 22px;border-radius:8px;'
-            + 'font-family:Arial,sans-serif;font-size:13px;font-weight:700;'
-            + 'box-shadow:0 4px 18px rgba(0,0,0,0.4);z-index:999999;pointer-events:none;'
-            + 'opacity:1;transition:opacity 0.4s ease;white-space:nowrap;';
-        toast.textContent = msg;
-        document.body.appendChild(toast);
-        setTimeout(function() { toast.style.opacity = '0'; }, 2600);
-        setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 3100);
-    }
+        function fetchOne(b, done) {
+            fetchFloorFromFCR(b, fc, function() {
+                resolved++;
+                onProgress(resolved, total);
+                done();
+            });
+        }
 
-    // ── Impression via iframe fire-and-forget (même méthode que FCRSWEEP) ──────
-    // Aucune attente de réponse : Roboscout continue en parallèle sans blocage.
-    function printBin(binCode, qty) {
-        qty = qty || 1;
-        var url = 'http://localhost:5965/printer?action=print&type=barcode'
-            + '&data='     + asciihex(binCode)
-            + '&text='     + asciihex(binCode)
-            + '&quantity=' + qty
-            + '&badgeid='  + getCookie('fcmenu-employeeId')
-            + '&desc=&seq=' + genId();
-        var iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        iframe.src = url;
-        document.body.appendChild(iframe);
-        setTimeout(function() { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); }, 2000);
-    }
+        function runQueue(queue, concurrency, taskFn, whenDone) {
+            var active = 0, idx = 0;
+            function next() {
+                while (active < concurrency && idx < queue.length) {
+                    var item = queue[idx++];
+                    active++;
+                    taskFn(item, function() {
+                        active--;
+                        next();
+                    });
+                }
+                if (active === 0 && idx >= queue.length) whenDone();
+            }
+            if (!queue.length) { whenDone(); return; }
+            next();
+        }
 
-    // Envoie tous les bins instantanément (fire-and-forget)
-    function printFloorBins(bins_to_print) {
-        if (!bins_to_print.length) return;
-        showPrintToast('\uD83D\uDDA8\uFE0F Envoi de ' + bins_to_print.length + ' bin(s)\u2026', null);
-        bins_to_print.forEach(function(b) { printBin(b.bin, b.take); });
-        setTimeout(function() {
-            showPrintToast('\u2705 ' + bins_to_print.length + ' bin(s) envoy\u00e9(s) \u00e0 l\'imprimante', true);
-        }, 400);
+        runQueue(bins, FCR_CONCURRENCY, fetchOne, function() {
+            var filtered = floorFilter === 'ALL'
+                ? bins
+                : bins.filter(function(b) { return b.floor === floorFilter; });
+            onDone(filtered);
+        });
     }
 
     function fetchInventory(asin, fc, cb) {
@@ -606,70 +809,6 @@
             },
             onerror: function() { cb([], 0, 'Erreur r\u00e9seau FCResearch'); }
         });
-    }
-
-    function resolveFloors(bins, fc, floorFilter, onProgress, onDone) {
-        var resolved = 0;
-        var total = bins.length;
-
-        function fetchOne(b, done) {
-            var url = ROBO_BASE + '/ipa/kpps/get_neighboring_bins/?bin_id=' + encodeURIComponent(b.bin) + '&building=' + encodeURIComponent(fc);
-            GM_xmlhttpRequest({
-                method: 'GET',
-                url: url,
-                withCredentials: true,
-                onload: function(resp) {
-                    try {
-                        var json = JSON.parse(resp.responseText);
-                        var d = json[b.bin] || {};
-                        b.floor = normalizeFloor(d.floor || '');
-                        b.aisle = d.aisle || '';
-                        b.shelf = d.shelf || '';
-                        b.slot  = d.slot  || '';
-                    } catch(e) { b.floor = 'Inconnu'; }
-                    done();
-                },
-                onerror: function() { b.floor = 'Inconnu'; done(); }
-            });
-        }
-
-        function runQueue(queue, concurrency, taskFn, whenDone) {
-            var active = 0, idx = 0;
-            function next() {
-                while (active < concurrency && idx < queue.length) {
-                    var item = queue[idx++];
-                    active++;
-                    taskFn(item, function() {
-                        active--;
-                        resolved++;
-                        onProgress(resolved, total);
-                        next();
-                    });
-                }
-                if (active === 0 && idx >= queue.length) whenDone();
-            }
-            if (!queue.length) { whenDone(); return; }
-            next();
-        }
-
-        if (floorFilter === 'ALL') {
-            runQueue(bins, ROBO_CONCURRENCY, fetchOne, function() { onDone(bins); });
-        } else {
-            // Passe 1 : echantillon de 20 bins pour detecter l'etage
-            var sample = bins.slice(0, Math.min(20, bins.length));
-            var rest   = bins.slice(sample.length);
-            runQueue(sample, ROBO_CONCURRENCY, fetchOne, function() {
-                // Marque les bins de l'echantillon pas au bon etage
-                sample.forEach(function(b) {
-                    if (b.floor !== floorFilter) b.floor = 'SKIP';
-                });
-                // Resout le reste complet
-                runQueue(rest, ROBO_CONCURRENCY, fetchOne, function() {
-                    var filtered = bins.filter(function(b) { return b.floor === floorFilter; });
-                    onDone(filtered);
-                });
-            });
-        }
     }
 
     function renderFloors(container, bins, maxPerFloor, floorFilter) {
@@ -720,20 +859,6 @@
             lbl.style.cssText += ';display:flex;align-items:center;gap:6px;';
             lbl.innerHTML = '\uD83C\uDFE2 \u00c9tage ' + esc(floor) +
                 ' <span class="ttin-floor-quota">' + taken + ' pris \u00b7 ' + totalFloor + ' dispo \u00b7 quota ' + maxPerFloor + '</span>';
-            // Bouton impression Zebra
-            (function(capturedSel, capturedFloor) {
-                var printBtn = document.createElement('button');
-                printBtn.className = 'ttin-print-floor';
-                printBtn.textContent = '\uD83D\uDDA8\uFE0F Imprimer';
-                printBtn.onclick = function(e) {
-                    e.stopPropagation();
-                    var card = div.closest('.ttin-card');
-                    var asinEl = card ? card.querySelector('.ttin-card-asin') : null;
-                    var asin = asinEl ? asinEl.textContent.trim() : '';
-                    printFloorBins(capturedSel);
-                };
-                lbl.appendChild(printBtn);
-            })(sel, floor);
             div.appendChild(lbl);
 
             if (!sel.length) {
@@ -751,12 +876,40 @@
 
                     var row = document.createElement('div');
                     row.className = 'ttin-bin';
-                    row.innerHTML =
-                        '<span>' +
-                            '<span class="ttin-bin-name">' + esc(b.bin) + '</span>' +
-                            (loc ? '<span class="ttin-bin-loc">' + esc(loc) + '</span>' : '') +
-                        '</span>' +
-                        '<span class="ttin-bin-qty">\u21a9 ' + b.take + '/' + b.qty + '</span>';
+
+                    var qrTrigger = document.createElement('span');
+                    qrTrigger.className = 'ttin-qr-trigger';
+                    qrTrigger.textContent = '▦ CB';
+                    (function(binCode) {
+                        qrTrigger.addEventListener('mouseenter', function() { showQRBubble(qrTrigger, binCode); });
+                        qrTrigger.addEventListener('mouseleave', hideQRBubble);
+                    })(b.bin);
+
+                    var infoSpan = document.createElement('span');
+                    infoSpan.style.cssText = 'flex:1;min-width:0;';
+                    infoSpan.innerHTML =
+                        '<span class="ttin-bin-name">' + esc(b.bin) + '</span>' +
+                        (loc ? '<span class="ttin-bin-loc">' + esc(loc) + '</span>' : '');
+
+                    var actions = document.createElement('span');
+                    actions.className = 'ttin-bin-actions';
+
+                    var qtyBadge = document.createElement('span');
+                    qtyBadge.className = 'ttin-bin-qty';
+                    qtyBadge.textContent = '\u21a9 ' + b.take + '/' + b.qty;
+
+                    var copyBtn = document.createElement('button');
+                    copyBtn.className = 'ttin-copy-btn';
+                    copyBtn.textContent = '\uD83D\uDCCB Copier';
+                    (function(binCode, btn) {
+                        btn.onclick = function(e) { e.stopPropagation(); copyBin(binCode, btn); };
+                    })(b.bin, copyBtn);
+
+                    actions.appendChild(qtyBadge);
+                    actions.appendChild(copyBtn);
+                    row.appendChild(qrTrigger);
+                    row.appendChild(infoSpan);
+                    row.appendChild(actions);
                     div.appendChild(row);
                 });
             }
