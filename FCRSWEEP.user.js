@@ -24,6 +24,7 @@
 // @connect      qi-fcresearch-eu.corp.amazon.com
 // @connect      rodeo-dub.amazon.com
 // @connect      localhost
+// @connect      www.amazon.fr
 // @require      https://code.jquery.com/jquery-3.6.0.min.js
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js
 // @require      https://cdn.jsdelivr.net/npm/jsbarcode@3.11.0/dist/JsBarcode.all.min.js
@@ -39,6 +40,7 @@
         productColors:  { label: '🎨 Couleurs attributs produit', default: true },
         godModePrint:   { label: '🖨️ God Mode (impression)',      default: true },
         hazmat:         { label: '☢️ Hazmat Level Display',       default: true },
+        amazonFrPrice:  { label: '🛒 Prix Amazon.fr',             default: true },
     };
 
     const MODULE_CACHE = {};
@@ -1342,6 +1344,9 @@ table.a-bordered tr:first-child th {
         // Restyle du widget Problem si présent
         if (typeof window._fcrProblemRestyle === 'function') window._fcrProblemRestyle();
 
+        // Restyle du badge Prix Amazon.fr si présent
+        if (typeof window._fcrAmzFrPriceBadgeRestyle === 'function') window._fcrAmzFrPriceBadgeRestyle();
+
         // ── Dinos supplémentaires FRED ──────────────────────────────
         document.querySelectorAll('.fcr-fred-dino').forEach(el => el.remove());
         if (themeName === 'fred') {
@@ -1547,8 +1552,180 @@ table.a-bordered tr:first-child th {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // ===== PHOTO HOVER SUR ASIN =====
+    // ===== PRIX AMAZON.FR =====
     // ════════════════════════════════════════════════════════════════
+    if (isModuleEnabled('amazonFrPrice')) {
+        const amazonFrPriceCache = {};
+
+        function fetchAmazonFrPrice(asin, callback) {
+            if (amazonFrPriceCache[asin] !== undefined) {
+                callback(amazonFrPriceCache[asin]);
+                return;
+            }
+            const url = `https://www.amazon.fr/gp/product/${asin}`;
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: url,
+                headers: {
+                    'Accept-Language': 'fr-FR,fr;q=0.9',
+                    'User-Agent': navigator.userAgent
+                },
+                onload: function(resp) {
+                    try {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(resp.responseText, 'text/html');
+
+                        // Essaye plusieurs sélecteurs de prix courants sur Amazon
+                        let price = null;
+                        const selectors = [
+                            '#apex_desktop .a-price .a-offscreen',
+                            '#corePrice_desktop_feature_div .a-offscreen',
+                            '#price_inside_buybox',
+                            '#priceblock_ourprice',
+                            '#priceblock_dealprice',
+                            '.priceToPay .a-offscreen',
+                            '#corePriceDisplay_desktop_feature_div .a-offscreen',
+                            '.a-price[data-a-size="xl"] .a-offscreen',
+                            '.a-price .a-offscreen',
+                        ];
+
+                        for (const sel of selectors) {
+                            const el = doc.querySelector(sel);
+                            if (el) {
+                                price = el.textContent.trim();
+                                // Normalise : "36,59 €" ou "36.59€"
+                                if (price) break;
+                            }
+                        }
+
+                        amazonFrPriceCache[asin] = price || null;
+                        callback(price || null);
+                    } catch(e) {
+                        amazonFrPriceCache[asin] = null;
+                        callback(null);
+                    }
+                },
+                onerror: function() {
+                    amazonFrPriceCache[asin] = null;
+                    callback(null);
+                }
+            });
+        }
+
+        function injectAmazonFrPrice() {
+            // Cherche l'ASIN dans la table produit
+            const asinTh = Array.from(document.querySelectorAll('[data-section-type="product"] table.a-keyvalue th'))
+                .find(th => th.textContent.trim() === 'ASIN');
+            if (!asinTh) return;
+
+            const asinTd = asinTh.closest('tr')?.querySelector('td');
+            const asin = asinTd?.textContent.trim();
+            if (!asin || !/^[A-Z0-9]{10}$/.test(asin)) return;
+
+            // Cherche "List Price" dans la table pour injecter juste à côté
+            const allTh = document.querySelectorAll('[data-section-type="product"] table.a-keyvalue th');
+            let targetTd = null;
+            for (const th of allTh) {
+                const txt = th.textContent.trim().toLowerCase();
+                if (txt.includes('list price') || txt.includes('prix catalogue') || txt.includes('prix de liste')) {
+                    targetTd = th.closest('tr')?.querySelector('td');
+                    break;
+                }
+            }
+
+            // Si pas de "List Price", prend la première ligne après ASIN (souvent le titre)
+            // Fallback : on ajoute une nouvelle ligne dans la table
+            const keyvalueTable = document.querySelector('[data-section-type="product"] table.a-keyvalue');
+            if (!keyvalueTable) return;
+
+            // Badge déjà injecté ?
+            if (document.getElementById('fcr-amzfr-price-badge')) return;
+
+            // Crée le badge "Prix Amazon.fr"
+            const badge = document.createElement('span');
+            badge.id = 'fcr-amzfr-price-badge';
+            badge.style.cssText = `
+                display: inline-flex; align-items: center; gap: 4px;
+                margin-left: 12px; padding: 2px 8px; border-radius: 4px;
+                font-size: 12px; font-weight: 700; vertical-align: middle;
+                white-space: nowrap; cursor: default; transition: background 0.3s, color 0.3s, border-color 0.3s, box-shadow 0.3s;
+            `;
+            badge.title = 'Prix actuel sur Amazon.fr';
+            badge.textContent = '🛒 Amazon.fr : …';
+            badge.dataset.priceState = 'loading';
+
+            // Fonction de restyle du badge selon le thème courant
+            function styleBadgeForTheme() {
+                const t = THEMES[currentTheme] || THEMES.bleu;
+                const state = badge.dataset.priceState;
+                if (state === 'ok') {
+                    badge.style.background   = t.isBase ? '#ff9900' : (t.isGradient ? t.gradBtn : t.bg3);
+                    badge.style.color        = t.isBase ? '#111'    : t.accent;
+                    badge.style.borderColor  = t.isBase ? '#e47911' : t.accentDark;
+                    badge.style.boxShadow    = t.isBase ? 'none'    : `0 0 6px ${t.accent}55`;
+                } else if (state === 'nd') {
+                    badge.style.background   = t.isBase ? '#888' : t.bg3;
+                    badge.style.color        = t.isBase ? '#fff' : '#aab4c8';
+                    badge.style.borderColor  = t.isBase ? '#666' : t.accentDark;
+                    badge.style.boxShadow    = 'none';
+                } else {
+                    // loading
+                    badge.style.background   = t.isBase ? '#eee' : t.bg2;
+                    badge.style.color        = t.isBase ? '#888' : '#aab4c8';
+                    badge.style.borderColor  = t.isBase ? '#ccc' : t.accentDark;
+                    badge.style.boxShadow    = 'none';
+                }
+            }
+
+            // Hook restyle appelé par applyTheme()
+            window._fcrAmzFrPriceBadgeRestyle = styleBadgeForTheme;
+            styleBadgeForTheme();
+
+            // Insère le badge dans la ligne List Price (ou crée une nouvelle ligne)
+            if (targetTd) {
+                targetTd.appendChild(badge);
+            } else {
+                // Crée une ligne dédiée à la fin de la table produit
+                const newRow = keyvalueTable.querySelector('tbody')?.insertRow() || keyvalueTable.insertRow();
+                const newTh = document.createElement('th');
+                newTh.style.cssText = 'width:30%; padding:4px 8px; white-space:nowrap;';
+                newTh.textContent = 'Amazon.fr';
+                const newTd = document.createElement('td');
+                newTd.style.cssText = 'padding:4px 8px;';
+                newTd.appendChild(badge);
+                newRow.appendChild(newTh);
+                newRow.appendChild(newTd);
+            }
+
+            // Fetch le prix
+            fetchAmazonFrPrice(asin, function(price) {
+                if (price) {
+                    badge.dataset.priceState = 'ok';
+                    badge.textContent = `🛒 Amazon.fr : ${price}`;
+                    badge.title = `Prix affiché sur amazon.fr (ASIN: ${asin})`;
+                } else {
+                    badge.dataset.priceState = 'nd';
+                    badge.textContent = '🛒 Amazon.fr : N/D';
+                    badge.title = `Prix non disponible sur amazon.fr (ASIN: ${asin})`;
+                }
+                styleBadgeForTheme();
+            });
+        }
+
+        // Lance l'injection dès que la table produit est présente
+        waitForElement('[data-section-type="product"] table.a-keyvalue')
+            .then(() => {
+                injectAmazonFrPrice();
+                // Re-observe les mutations de page (navigation SPA)
+                const obs = new MutationObserver(() => {
+                    if (!document.getElementById('fcr-amzfr-price-badge')) {
+                        injectAmazonFrPrice();
+                    }
+                });
+                obs.observe(document.body, { childList: true, subtree: true });
+            })
+            .catch(() => {});
+    }
     if (isModuleEnabled('imageHover')) {
         function addImageHoverToASINs() {
             const imageContainer = document.createElement('div');
@@ -2272,11 +2449,8 @@ table.a-bordered tr:first-child th {
                 { separator: true },
                 { name: "GetMappings", url: (asin) => `https://fba-fnsku-commingling-console-na.aka.amazon.com/tool/fnsku-mappings-tool?getMappingsType=ASIN_MAPPINGS&ASIN=${asin}&includeInactive=true&submit=get` },
                 { name: "Prep Manager", url: (asin) => `${getURL('prepmanager')}/view/${asin}?region=${REGION}` },
-                { name: "Procurement", url: (asin) => `https://procurementportal-na.corp.amazon.com/bp/asin?asin=${asin}` },
                 { name: "PanDash", url: (asin) => `https://pandash.amazon.com#${asin}` },
-                { name: "CSI", url: (asin) => `https://csi.amazon.com/view?view=simple_product_data_view&item_id=${asin}&marketplace_id=1` },
-                { name: "Amazon.com", url: (asin) => `https://amazon.com/dp/${asin}` },
-                { name: "Po Portal", url: () => `https://console.harmony.a2z.com/poportal/` }
+                { name: "CSI", url: (asin) => `https://csi.amazon.com/view?view=simple_product_data_view&item_id=${asin}&marketplace_id=1` }
             ];
             const PO_LINKS = [
                 { name: "Copy", action: (po) => copyToClipboard(po) },
