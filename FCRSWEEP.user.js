@@ -1154,6 +1154,12 @@ table.a-bordered tr:first-child th {
             .prep-instructions-row td { background-color:#fff8e1 !important; color:#7a4f00 !important; border-left:4px solid #e67e22 !important; }
             .prep-instructions-row.prep-noprep td { background-color:#f0fff0 !important; color:#276621 !important; border-left:4px solid #27ae60 !important; }
             .prep-instructions-row.prep-unknown td { background-color:#fffde7 !important; color:#7a6000 !important; border-left:4px solid #f1c40f !important; }
+            /* Sidebar scrollbar — thème Base */
+            #side-bar { overflow-y: auto !important; overflow-x: hidden !important; max-height: 100vh !important; position: sticky !important; top: 0 !important; }
+            #side-bar::-webkit-scrollbar { width: 6px; }
+            #side-bar::-webkit-scrollbar-track { background: #e0e0e0; border-radius: 3px; }
+            #side-bar::-webkit-scrollbar-thumb { background: #999; border-radius: 3px; }
+            #side-bar::-webkit-scrollbar-thumb:hover { background: #666; }
             `;
         } else {
             const panelBg = t.isGradient ? t.gradPanel : t.bg2;
@@ -1304,6 +1310,12 @@ table.a-bordered tr:first-child th {
         .prep-instructions-row.prep-yes td  { color:${t.prepYes} !important; border-left-color:${t.prepYes} !important; }
         .prep-instructions-row.prep-noprep td { color:${t.prepNoPrep} !important; border-left-color:${t.prepNoPrep} !important; }
         .prep-instructions-row.prep-unknown td { color:#f1c40f !important; border-left-color:#f1c40f !important; background-color:${t.bg3} !important; }
+        /* Sidebar scrollbar — suit le thème */
+        #side-bar { overflow-y: auto !important; overflow-x: hidden !important; max-height: 100vh !important; position: sticky !important; top: 0 !important; }
+        #side-bar::-webkit-scrollbar { width: 6px; }
+        #side-bar::-webkit-scrollbar-track { background: ${t.bg2}; border-radius: 3px; }
+        #side-bar::-webkit-scrollbar-thumb { background: ${t.accentDark}; border-radius: 3px; }
+        #side-bar::-webkit-scrollbar-thumb:hover { background: ${t.accent}; box-shadow: 0 0 6px ${t.accent}88; }
         ${t.isAnimated && t.animCSS ? t.animCSS : ''}
         `;
         }
