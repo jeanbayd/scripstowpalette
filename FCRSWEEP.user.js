@@ -2524,7 +2524,10 @@ table.a-bordered tr:first-child th {
                 if (menuY + menuHeight > windowHeight) menuY = windowHeight - menuHeight - 10;
                 if (menuX < 0) menuX = 10; if (menuY < 0) menuY = 10;
                 menu.css({ top: menuY + 'px', left: menuX + 'px', visibility: 'visible' });
-                $(document).one('click contextmenu', () => menu.remove());
+                // Différé pour éviter que l'événement contextmenu d'ouverture ferme immédiatement le menu
+                setTimeout(() => {
+                    $(document).one('click contextmenu', () => menu.remove());
+                }, 0);
             }
 
             function getSelectedText() { return window.getSelection ? window.getSelection().toString() : ''; }
@@ -3253,8 +3256,9 @@ table.a-bordered tr:first-child th {
                     onload: function(response) {
                         if (response.response && response.response.rows && response.response.rows.length > 0) {
                             const data = response.response.rows[0];
-                            const hazmatLevel = data.htrc || data.level || 'Non trouvé';
-                            const lastinLevel = data.level || '';
+                            // On utilise "Last In" (data.level) comme chiffre principal affiché
+                            const lastinLevel = data.level || data.htrc || 'Non trouvé';
+                            const hazmatLevel = lastinLevel; // badge + couleurs basés sur Last In
                             const lastinMessage = data.message || '';
                             const pcApproved = data.pcApproved || '';
                             buildHazmatPanel(anchorRow, asin, hazmatLevel, lastinMessage, lastinLevel, pcApproved);
@@ -3981,6 +3985,48 @@ table.a-bordered tr:first-child th {
         const sep = document.createElement('hr');
         sep.style.cssText = `border:none;border-top:1px solid ${v.borderColor};margin:0;`;
         body.appendChild(sep);
+
+        // ── Favoris ──────────────────────────────────────────────────
+        const FAVORITES = [
+            { cat: 'Inbound',  idx: 0, icon: '📥', label: 'INBOUND CUBI'  },  // Inbound → CUBI (index 0)
+            { cat: 'Damage',   idx: 0, icon: '💥', label: 'ICQA DAMAGE'   },  // Damage  → ICQA Damage (index 0)
+        ];
+        const favRow = document.createElement('div');
+        favRow.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;';
+        const favLbl = document.createElement('span');
+        favLbl.textContent = '⭐ Favoris';
+        favLbl.style.cssText = `font-size:11px;font-weight:600;color:${v.textColor};min-width:70px;`;
+        favRow.appendChild(favLbl);
+        FAVORITES.forEach(fav => {
+            const btn = document.createElement('button');
+            btn.textContent = `${fav.icon} ${fav.label}`;
+            btn.title = `Imprimer 1× ${fav.label}`;
+            btn.style.cssText = `
+                padding:4px 9px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;
+                border:1px solid ${v.accentColor};background:${v.isDark ? (t.isGradient ? t.gradBtn : t.bg3) : '#fff3dc'};
+                color:${v.accentColor};transition:background 0.15s,color 0.15s;white-space:nowrap;
+            `;
+            btn.addEventListener('mouseenter', () => { btn.style.background = v.accentColor; btn.style.color = '#fff'; });
+            btn.addEventListener('mouseleave', () => { btn.style.background = v.isDark ? (t.isGradient ? t.gradBtn : t.bg3) : '#fff3dc'; btn.style.color = v.accentColor; });
+            btn.addEventListener('click', () => {
+                const eti = (ETIQUETTES[fav.cat] || [])[fav.idx];
+                if (!eti) return;
+                const qtyEl = document.getElementById('etiq2-qty');
+                const qty = parseInt(qtyEl ? qtyEl.value : '1') || 1;
+                try {
+                    etiq2_print(eti, qty);
+                    etiq2_showFeedback('✓ Envoyé à l\'impression', '#27ae60');
+                } catch(e) {
+                    etiq2_showFeedback('✗ Erreur', '#e74c3c');
+                }
+            });
+            favRow.appendChild(btn);
+        });
+        body.appendChild(favRow);
+
+        const sep2 = document.createElement('hr');
+        sep2.style.cssText = `border:none;border-top:1px solid ${v.borderColor};margin:0;`;
+        body.appendChild(sep2);
 
         // Catégorie
         const catRow = document.createElement('div');
