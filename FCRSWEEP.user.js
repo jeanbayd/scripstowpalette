@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         FCR Lite Ultra V4 — SWEEP
-// @version      3.0.0
+// @version      3.1.0
 // @description  FCR Lite SWEEP — Thèmes, Prep, God Mode Print, Hazmat, Étiquettes, Couleurs, CSV, Weight (sans Bin Check, Floor Finder, Analyse Palette)
 // @author       @JEANBAYD
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2*
@@ -25,6 +25,7 @@
 // @connect      rodeo-dub.amazon.com
 // @connect      localhost
 // @connect      www.amazon.fr
+// @connect      www.pokemon.com
 // @require      https://code.jquery.com/jquery-3.6.0.min.js
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js
 // @require      https://cdn.jsdelivr.net/npm/jsbarcode@3.11.0/dist/JsBarcode.all.min.js
@@ -959,6 +960,119 @@ table.a-bordered tr:first-child th {
 .a-box { border-top-color: #ffbb44 !important; }
 `
         },
+        phantominion: {
+            bg1:'#0a0014', bg2:'#110022', bg3:'#1c0035',
+            accent:'#c77dff', accentDark:'#5a1a8a', label:'👻 Phantominion',
+            prepBg:'#110022', prepNoPrep:'#ffd700', prepYes:'#c77dff',
+            isGradient:true, isAnimated:true,
+            gradHeader:'linear-gradient(135deg, #1c0035 0%, #3d006b 45%, #5a1a8a 100%)',
+            gradPanel:'linear-gradient(160deg, #0a0014 0%, #110022 55%, #0a0014 100%)',
+            gradAccent:'linear-gradient(90deg, #c77dff 0%, #e0aaff 40%, #ffd700 70%, #c77dff 100%)',
+            gradBtn:'linear-gradient(135deg, #1c0035 0%, #5a1a8a 60%, #c77dff 100%)',
+            animCSS:`
+@keyframes fcr-phan-bg-shift {
+    0%,100% { background-position: 0% 50%; }
+    50%      { background-position: 100% 50%; }
+}
+@keyframes fcr-phan-float {
+    0%,100% { transform: translateX(-150px) translateY(0px) scaleX(1); opacity:0; }
+    3%       { opacity:1; }
+    46%      { transform: translateX(calc(100vw + 150px)) translateY(-18px) scaleX(1); opacity:0.9; }
+    47%      { transform: translateX(calc(100vw + 150px)) translateY(-18px) scaleX(-1); opacity:0; }
+    50%      { opacity:0; }
+    53%      { opacity:0.7; }
+    97%      { transform: translateX(-150px) translateY(8px) scaleX(-1); opacity:0.7; }
+    98%      { opacity:0; }
+}
+@keyframes fcr-phan-float2 {
+    0%,100% { transform: translateX(-100px) translateY(0px) scaleX(1); opacity:0; }
+    5%       { opacity:0.6; }
+    44%      { transform: translateX(calc(100vw + 100px)) translateY(22px) scaleX(1); opacity:0.55; }
+    45%      { transform: translateX(calc(100vw + 100px)) translateY(22px) scaleX(-1); opacity:0; }
+    55%      { opacity:0; }
+    58%      { opacity:0.5; }
+    96%      { transform: translateX(-100px) translateY(-10px) scaleX(-1); opacity:0.5; }
+    97%      { opacity:0; }
+}
+@keyframes fcr-phan-bob {
+    0%,100% { transform: translateY(0px) rotate(-3deg); }
+    25%      { transform: translateY(-8px) rotate(2deg); }
+    50%      { transform: translateY(-4px) rotate(-1deg); }
+    75%      { transform: translateY(-10px) rotate(3deg); }
+}
+@keyframes fcr-phan-glow {
+    0%,100% { box-shadow: 0 0 10px #c77dff44, 0 0 25px #5a1a8a22; }
+    50%      { box-shadow: 0 0 28px #c77dff99, 0 0 55px #ffd70033; }
+}
+@keyframes fcr-phan-text-glow {
+    0%,100% { text-shadow: 0 0 7px #c77dffcc, 0 0 18px #9b4dca66; }
+    50%      { text-shadow: 0 0 16px #e0aaffcc, 0 0 36px #ffd70066; }
+}
+@keyframes fcr-phan-orb-float {
+    0%,100% { transform: translateY(0px) scale(1); opacity:0.18; }
+    50%      { transform: translateY(-16px) scale(1.08); opacity:0.32; }
+}
+@keyframes fcr-phan-orb-float2 {
+    0%,100% { transform: translateY(0px) scale(1); opacity:0.12; }
+    50%      { transform: translateY(-22px) scale(1.12); opacity:0.25; }
+}
+@keyframes fcr-phan-stars {
+    0%,100% { opacity:0.08; }
+    50%      { opacity:0.22; }
+}
+.fcr-phan-ghost {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9997;
+    line-height: 1;
+}
+.fcr-phan-orb {
+    position: fixed;
+    pointer-events: none;
+    border-radius: 50%;
+    filter: blur(32px);
+}
+body, #side-bar {
+    background: linear-gradient(160deg, #0a0014, #110022, #1c0035, #0f0020, #0a0014) !important;
+    background-size: 400% 400% !important;
+    animation: fcr-phan-bg-shift 20s ease infinite !important;
+    position: relative !important;
+    overflow-x: hidden !important;
+}
+body::before {
+    content: '✦';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-image:
+        radial-gradient(circle, #c77dff22 1px, transparent 1px),
+        radial-gradient(circle, #ffd70011 1px, transparent 1px);
+    background-size: 80px 80px, 130px 130px;
+    background-position: 0 0, 40px 40px;
+    pointer-events: none;
+    z-index: 9990;
+    animation: fcr-phan-stars 6s ease-in-out infinite;
+}
+body::after { content: none !important; }
+#fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel {
+    animation: fcr-phan-glow 5s ease-in-out infinite !important;
+    border-width: 1px !important;
+    border-color: #c77dff55 !important;
+}
+#hazmat-fcr-header, #fcr-theme-header, #fcr-module-header {
+    background: linear-gradient(135deg, #1c0035, #3d006b, #5a1a8a, #3d006b, #1c0035) !important;
+    background-size: 300% 300% !important;
+    animation: fcr-phan-bg-shift 12s ease infinite !important;
+}
+#hazmat-fcr-header-title, #fcr-theme-label, #fcr-module-label {
+    animation: fcr-phan-text-glow 4s ease-in-out infinite !important;
+}
+table.a-bordered tr:first-child th {
+    border-bottom: 2px solid #c77dff55 !important;
+    text-shadow: 0 0 8px #c77dff88 !important;
+}
+.a-box { border-top-color: #c77dff !important; }
+`
+        },
         void_theme: {
             bg1:'#000005', bg2:'#080010', bg3:'#100018',
             accent:'#00ff88', accentDark:'#004433', label:'🌀 Void',
@@ -1114,6 +1228,7 @@ table.a-bordered tr:first-child th {
             #fcr-theme-btn-sakura   { background:${THEMES.sakura.gradBtn}; color:#ffe4ec; border-color:${THEMES.sakura.accent}; text-shadow:0 1px 2px rgba(0,0,0,0.5); }
             #fcr-theme-btn-cyberpunk { background:${THEMES.cyberpunk.gradBtn}; color:#f9e900; border-color:${THEMES.cyberpunk.accent}; text-shadow:0 0 6px #f9e900aa; }
         #fcr-theme-btn-void_theme { background:${THEMES.void_theme.gradBtn}; color:#00ff88; border-color:${THEMES.void_theme.accent}; text-shadow:0 0 6px #00ff88aa; }
+            #fcr-theme-btn-phantominion { background:${THEMES.phantominion.gradBtn}; color:#e0aaff; border-color:${THEMES.phantominion.accent}; text-shadow:0 0 6px #c77dffaa; }
             #fcr-module-panel { background:#f0f0f0; border-bottom:2px solid #ccc; overflow:hidden; }
             #fcr-module-header { display:flex; align-items:center; justify-content:space-between; padding:7px 10px; cursor:pointer; border-bottom:1px solid #ccc; user-select:none; }
             #fcr-module-header:hover { background:#e0e0e0; }
@@ -1243,6 +1358,7 @@ table.a-bordered tr:first-child th {
         #fcr-theme-btn-blizzard { background:${THEMES.blizzard.gradBtn}; color:#a8e4ff; border-color:${THEMES.blizzard.accent}; text-shadow:0 0 6px #a8e4ffaa; }
         #fcr-theme-btn-ophe { background:${THEMES.ophe.gradBtn}; color:#f9a8d4; border-color:${THEMES.ophe.accent}; text-shadow:0 0 6px #f9a8d4aa; }
         #fcr-theme-btn-safari { background:${THEMES.safari.gradBtn}; color:#ffbb44; border-color:${THEMES.safari.accent}; text-shadow:0 0 6px #ffbb44aa; }
+        #fcr-theme-btn-phantominion { background:${THEMES.phantominion.gradBtn}; color:#e0aaff; border-color:${THEMES.phantominion.accent}; text-shadow:0 0 6px #c77dffaa; }
         /* Module panel theming — suit désormais le thème actif */
         #fcr-module-panel { border-bottom:2px solid ${t.accentDark}; background:${panelBg}; overflow:hidden; }
         #fcr-module-header { display:flex; align-items:center; justify-content:space-between; padding:7px 10px; cursor:pointer; border-bottom:1px solid ${t.accentDark}; user-select:none; transition:background 0.2s; }
@@ -1416,6 +1532,47 @@ table.a-bordered tr:first-child th {
             zebra.textContent = '🦓';
             zebra.style.cssText = 'bottom:2px; left:0; font-size:22px; z-index:9996; opacity:0.75; animation: fcr-saf-walk2 9s linear 3s infinite; filter: drop-shadow(0 0 4px #ffbb4466);';
             document.body.appendChild(zebra);
+        }
+
+        // ── Fantômes PHANTOMINION ────────────────────────────────────
+        document.querySelectorAll('.fcr-phan-ghost, .fcr-phan-orb').forEach(el => el.remove());
+        if (themeName === 'phantominion') {
+            const PHAN_IMG = 'https://www.pokemon.com/static-assets/content-assets/cms2/img/pokedex/full/092.png';
+
+            function makePhan(cssText) {
+                const div = document.createElement('div');
+                div.className = 'fcr-phan-ghost';
+                const img = document.createElement('img');
+                img.src = PHAN_IMG;
+                img.alt = 'Fantominus';
+                img.style.cssText = 'width:100%;height:100%;object-fit:contain;';
+                div.appendChild(img);
+                div.style.cssText = cssText;
+                document.body.appendChild(div);
+            }
+
+            // Fantominus principal — traverse l'écran lentement
+            makePhan('bottom:50px;left:0;width:90px;height:90px;animation:fcr-phan-float 18s linear infinite;filter:drop-shadow(0 0 14px #c77dffcc);');
+            // Fantominus secondaire — plus haut, plus petit, délai décalé
+            makePhan('bottom:160px;left:0;width:55px;height:55px;animation:fcr-phan-float2 27s linear 7s infinite;opacity:0.7;filter:drop-shadow(0 0 9px #9b59b6bb);');
+            // Petit Fantominus fixe — flotte dans le coin haut droit
+            makePhan('top:72px;right:18px;width:38px;height:38px;animation:fcr-phan-bob 5s ease-in-out 1s infinite;opacity:0.5;filter:drop-shadow(0 0 8px #e0aaff99);z-index:9996;');
+
+            // Orbes violettes en arrière-plan
+            const orb1 = document.createElement('div');
+            orb1.className = 'fcr-phan-orb';
+            orb1.style.cssText = 'width:260px;height:260px;background:radial-gradient(circle,#c77dff 0%,transparent 70%);top:5%;left:5%;z-index:9989;animation:fcr-phan-orb-float 9s ease-in-out infinite;';
+            document.body.appendChild(orb1);
+
+            const orb2 = document.createElement('div');
+            orb2.className = 'fcr-phan-orb';
+            orb2.style.cssText = 'width:200px;height:200px;background:radial-gradient(circle,#ffd700 0%,transparent 70%);bottom:10%;right:8%;z-index:9989;animation:fcr-phan-orb-float2 12s ease-in-out 3s infinite;';
+            document.body.appendChild(orb2);
+
+            const orb3 = document.createElement('div');
+            orb3.className = 'fcr-phan-orb';
+            orb3.style.cssText = 'width:150px;height:150px;background:radial-gradient(circle,#9b59b6 0%,transparent 70%);top:45%;right:25%;z-index:9989;animation:fcr-phan-orb-float 15s ease-in-out 7s infinite;';
+            document.body.appendChild(orb3);
         }
 
         // ── Pétales OPHÉ ─────────────────────────────────────────────
