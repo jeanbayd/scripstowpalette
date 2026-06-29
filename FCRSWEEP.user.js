@@ -1191,10 +1191,6 @@ table.a-bordered tr:first-child th {
     }
 
     function applyTheme(themeName) {
-        // Thème phantominion réservé exclusivement au login lanadriz
-        if (themeName === 'phantominion' && getCookie('fcmenu-employeeLogin').toLowerCase().trim() !== 'lanadriz') {
-            themeName = 'bleu';
-        }
         const t = THEMES[themeName] || THEMES.bleu;
         GM_setValue('colorTheme', themeName);
         currentTheme = themeName;
@@ -1620,10 +1616,8 @@ table.a-bordered tr:first-child th {
         const isStaticOpen  = GM_getValue('themePanelStaticOpen', true);
         const isAnimOpen    = GM_getValue('themePanelAnimOpen', true);
 
-        const _currentLogin = getCookie('fcmenu-employeeLogin').toLowerCase().trim();
-        const _isPhanAllowed = _currentLogin === 'lanadriz';
         const staticKeys = Object.keys(THEMES).filter(k => !THEMES[k].isAnimated);
-        const animKeys   = Object.keys(THEMES).filter(k => THEMES[k].isAnimated && (k !== 'phantominion' || _isPhanAllowed));
+        const animKeys   = Object.keys(THEMES).filter(k =>  THEMES[k].isAnimated);
 
         const panel = document.createElement('div');
         panel.id = 'fcr-theme-panel';
