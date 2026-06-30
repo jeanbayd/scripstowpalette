@@ -1302,7 +1302,7 @@ body::after {
         },
     };
 
-    let currentTheme = GM_getValue('colorTheme', 'bleu');
+    let currentTheme = GM_getValue('colorTheme', 'base');
 
     // ─── Restyle Hazmat panel on theme change (global scope, called by applyTheme) ───
     function injectHazmatPanel_restyle(t) {
@@ -1903,12 +1903,16 @@ body::after {
                         const selectors = [
                             '#apex_desktop .a-price .a-offscreen',
                             '#corePrice_desktop_feature_div .a-offscreen',
+                            '#corePrice_feature_div .a-offscreen',
                             '#price_inside_buybox',
                             '#priceblock_ourprice',
                             '#priceblock_dealprice',
                             '.priceToPay .a-offscreen',
                             '#corePriceDisplay_desktop_feature_div .a-offscreen',
+                            '#twister-plus-price-data-price .a-offscreen',
+                            '#sns-base-price .a-offscreen',
                             '.a-price[data-a-size="xl"] .a-offscreen',
+                            '.a-price[data-a-size="medium"] .a-offscreen',
                             '.a-price .a-offscreen',
                         ];
 
@@ -1921,16 +1925,63 @@ body::after {
                             }
                         }
 
-                        amazonFrPriceCache[asin] = price || null;
-                        callback(price || null);
+                        // Fallback 1 : reconstruit le prix depuis les spans a-price-whole / a-price-fraction
+                        // (certains templates n'ont pas de .a-offscreen avec le texte complet)
+                        if (!price) {
+                            const priceEl = doc.querySelector('.a-price:not(.a-text-price)');
+                            if (priceEl) {
+                                const whole = priceEl.querySelector('.a-price-whole');
+                                const frac  = priceEl.querySelector('.a-price-fraction');
+                                const symbol = priceEl.querySelector('.a-price-symbol');
+                                if (whole) {
+                                    const w = whole.textContent.replace(/[^\d]/g, '');
+                                    const f = frac ? frac.textContent.replace(/[^\d]/g, '') : '00';
+                                    const sym = symbol ? symbol.textContent.trim() : '€';
+                                    price = `${w},${f} ${sym}`;
+                                }
+                            }
+                        }
+
+                        // Fallback 2 : cherche un prix directement dans le HTML brut (JSON embarqué,
+                        // utile quand la page est servie côté serveur sans les conteneurs habituels)
+                        if (!price) {
+                            const raw = resp.responseText;
+                            let m = raw.match(/"priceAmount"\s*:\s*"?(\d+[.,]\d{2})"?/);
+                            if (!m) m = raw.match(/class="a-offscreen"[^>]*>\s*([\d.,]+\s?€)\s*</);
+                            if (m) {
+                                price = m[1].includes('€') ? m[1] : m[1].replace('.', ',') + ' €';
+                            }
+                        }
+
+                        // Prix barré (prix conseillé / List Price), affiché à côté du prix actuel
+                        let listPrice = null;
+                        const listPriceSelectors = [
+                            '.basisPrice .a-text-price .a-offscreen',
+                            '#corePriceDisplay_desktop_feature_div .basisPrice .a-offscreen',
+                            '.a-text-price[data-a-strike="true"] .a-offscreen',
+                            '#priceblock_strikeprice',
+                            '#listPrice',
+                            '.a-text-strike',
+                        ];
+                        for (const sel of listPriceSelectors) {
+                            const el = doc.querySelector(sel);
+                            if (el) {
+                                const txt = el.textContent.trim();
+                                if (txt && txt !== price) { listPrice = txt; break; }
+                            }
+                        }
+
+                        const result = { price: price || null, listPrice: listPrice || null };
+                        amazonFrPriceCache[asin] = result;
+                        callback(result);
                     } catch(e) {
-                        amazonFrPriceCache[asin] = null;
-                        callback(null);
+                        amazonFrPriceCache[asin] = { price: null, listPrice: null };
+                        callback({ price: null, listPrice: null });
                     }
                 },
                 onerror: function() {
-                    amazonFrPriceCache[asin] = null;
-                    callback(null);
+                    amazonFrPriceCache[asin] = { price: null, listPrice: null };
+                    callback({ price: null, listPrice: null });
                 }
             });
         }
@@ -2021,10 +2072,13 @@ body::after {
             }
 
             // Fetch le prix
-            fetchAmazonFrPrice(asin, function(price) {
+            fetchAmazonFrPrice(asin, function(result) {
+                const price = result && result.price;
+                const listPrice = result && result.listPrice;
                 if (price) {
                     badge.dataset.priceState = 'ok';
-                    badge.textContent = `🛒 Amazon.fr : ${price}`;
+                    badge.innerHTML = `🛒 Amazon.fr : <strong>${price}</strong>` +
+                        (listPrice ? ` <span style="text-decoration:line-through;opacity:0.65;font-weight:400;margin-left:4px;">${listPrice}</span>` : '');
                     badge.title = `Prix affiché sur amazon.fr (ASIN: ${asin})`;
                 } else {
                     badge.dataset.priceState = 'nd';
@@ -2040,12 +2094,13 @@ body::after {
             .then(() => {
                 injectAmazonFrPrice();
                 // Re-observe les mutations de page (navigation SPA)
-                const obs = new MutationObserver(() => {
+                const priceRoot = document.querySelector('main') || document.querySelector('[role="main"]') || document.querySelector('#content') || document.body;
+                const obs = new MutationObserver(debounce(() => {
                     if (!document.getElementById('fcr-amzfr-price-badge')) {
                         injectAmazonFrPrice();
                     }
-                });
-                obs.observe(document.body, { childList: true, subtree: true });
+                }, 400));
+                obs.observe(priceRoot, { childList: true, subtree: true });
             })
             .catch(() => {});
     }
@@ -2156,12 +2211,12 @@ body::after {
 
             addHoverListeners();
 
-            const observer = new MutationObserver((mutations) => {
-                mutations.forEach(mutation => {
-                    if (mutation.addedNodes.length) addHoverListeners();
-                });
-            });
-            observer.observe(document.body, { childList: true, subtree: true });
+            const hoverRoot = document.querySelector('main') || document.querySelector('[role="main"]') || document.querySelector('#content') || document.body;
+            const observer = new MutationObserver(debounce((mutations) => {
+                const hasAdded = mutations.some(m => m.addedNodes.length);
+                if (hasAdded) addHoverListeners();
+            }, 300));
+            observer.observe(hoverRoot, { childList: true, subtree: true });
         }
         addImageHoverToASINs();
     }
@@ -2849,10 +2904,24 @@ body::after {
                 if (menuY + menuHeight > windowHeight) menuY = windowHeight - menuHeight - 10;
                 if (menuX < 0) menuX = 10; if (menuY < 0) menuY = 10;
                 menu.css({ top: menuY + 'px', left: menuX + 'px', visibility: 'visible' });
-                // Différé pour éviter que l'événement contextmenu d'ouverture ferme immédiatement le menu
-                setTimeout(() => {
-                    $(document).one('click contextmenu', () => menu.remove());
-                }, 0);
+                ensureCtxMenuCloseHandler();
+            }
+
+            // Handler de fermeture unique, lié une seule fois (pas de re-binding à chaque
+            // ouverture, donc pas de course/délai). Se ferme uniquement sur un clic GAUCHE
+            // réel en dehors du menu — ignore le clic droit lui-même (event.button === 2)
+            // et tout clic à l'intérieur du menu (géré par les handlers des items).
+            let fcrCtxMenuHandlerBound = false;
+            function ensureCtxMenuCloseHandler() {
+                if (fcrCtxMenuHandlerBound) return;
+                fcrCtxMenuHandlerBound = true;
+                document.addEventListener('mousedown', function(ev) {
+                    if (ev.button === 2) return;
+                    const menuEl = document.querySelector('.custom-context-menu');
+                    if (!menuEl) return;
+                    if (menuEl.contains(ev.target)) return;
+                    menuEl.remove();
+                }, true);
             }
 
             function getSelectedText() { return window.getSelection ? window.getSelection().toString() : ''; }
@@ -5074,7 +5143,7 @@ body::after {
                 }, 5000);
             }
 
-            const observer = new MutationObserver(() => processTable());
+            const observer = new MutationObserver(debounce(() => processTable(), 300));
             observer.observe(document.body, { childList: true, subtree: true });
             processTable();
         }
