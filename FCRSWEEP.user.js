@@ -1272,7 +1272,7 @@ table.a-bordered tr:first-child th {
             .prep-instructions-row.prep-noprep td { background-color:#f0fff0 !important; color:#276621 !important; border-left:4px solid #27ae60 !important; }
             .prep-instructions-row.prep-unknown td { background-color:#fffde7 !important; color:#7a6000 !important; border-left:4px solid #f1c40f !important; }
             /* Sidebar scrollbar — thème Base */
-            #side-bar { overflow-y: auto !important; overflow-x: hidden !important; max-height: 100vh !important; position: sticky !important; top: 0 !important; }
+            #side-bar { overflow-y: auto !important; overflow-x: hidden !important; max-height: calc(100vh - var(--fcr-sidebar-offset, 0px)) !important; position: sticky !important; top: var(--fcr-sidebar-offset, 0px) !important; }
             #side-bar::-webkit-scrollbar { width: 6px; }
             #side-bar::-webkit-scrollbar-track { background: #e0e0e0; border-radius: 3px; }
             #side-bar::-webkit-scrollbar-thumb { background: #999; border-radius: 3px; }
@@ -1429,7 +1429,7 @@ table.a-bordered tr:first-child th {
         .prep-instructions-row.prep-noprep td { color:${t.prepNoPrep} !important; border-left-color:${t.prepNoPrep} !important; }
         .prep-instructions-row.prep-unknown td { color:#f1c40f !important; border-left-color:#f1c40f !important; background-color:${t.bg3} !important; }
         /* Sidebar scrollbar — suit le thème */
-        #side-bar { overflow-y: auto !important; overflow-x: hidden !important; max-height: 100vh !important; position: sticky !important; top: 0 !important; }
+        #side-bar { overflow-y: auto !important; overflow-x: hidden !important; max-height: calc(100vh - var(--fcr-sidebar-offset, 0px)) !important; position: sticky !important; top: var(--fcr-sidebar-offset, 0px) !important; }
         #side-bar::-webkit-scrollbar { width: 6px; }
         #side-bar::-webkit-scrollbar-track { background: ${t.bg2}; border-radius: 3px; }
         #side-bar::-webkit-scrollbar-thumb { background: ${t.accentDark}; border-radius: 3px; }
@@ -4534,6 +4534,75 @@ table.a-bordered tr:first-child th {
             hideTooltip();
         });
 
+    })();
+
+    // === Correction position sidebar : suit le header + reste collée pendant le scroll ===
+    (function fixSidebarOffset() {
+        function getSidebar() {
+            return document.querySelector('#side-bar') || document.querySelector('.sidebar') || document.querySelector('[id*="side"]');
+        }
+
+        function computeOffset(sidebar) {
+            const sidebarRect = sidebar.getBoundingClientRect();
+            let maxBottom = 0;
+
+            // 1) Cas le plus courant : un header en position fixed/sticky collé en haut de l'écran
+            //    qui chevauche horizontalement la sidebar (donc passe "par-dessus" elle).
+            const all = document.querySelectorAll('body *');
+            for (const el of all) {
+                if (el === sidebar || sidebar.contains(el) || el.contains(sidebar)) continue;
+                const cs = getComputedStyle(el);
+                if (cs.position !== 'fixed' && cs.position !== 'sticky') continue;
+                const r = el.getBoundingClientRect();
+                if (r.height <= 0 || r.width <= 0) continue;
+                // Doit être collé en haut (top proche de 0) pour être considéré comme un header
+                if (r.top > 20) continue;
+                // Doit chevaucher horizontalement la colonne de la sidebar
+                if (r.right <= sidebarRect.left || r.left >= sidebarRect.right) continue;
+                if (r.bottom > maxBottom) maxBottom = r.bottom;
+            }
+
+            // 2) Fallback : si rien trouvé en fixed/sticky, on mesure la position naturelle
+            //    du sidebar dans le flux (cas où le header prend de la place normalement).
+            if (maxBottom === 0) {
+                const scrollY = window.scrollY || window.pageYOffset || 0;
+                const prevPosition = sidebar.style.position;
+                const prevTop = sidebar.style.top;
+                sidebar.style.position = 'static';
+                sidebar.style.top = 'auto';
+                maxBottom = sidebar.getBoundingClientRect().top + scrollY;
+                sidebar.style.position = prevPosition;
+                sidebar.style.top = prevTop;
+            }
+
+            return Math.max(0, Math.round(maxBottom));
+        }
+
+        function applyOffset() {
+            const sidebar = getSidebar();
+            if (!sidebar) return;
+            const offset = computeOffset(sidebar);
+            document.documentElement.style.setProperty('--fcr-sidebar-offset', offset + 'px');
+        }
+
+        function init() {
+            applyOffset();
+            window.addEventListener('resize', applyOffset);
+            window.addEventListener('orientationchange', applyOffset);
+            // Recalcul si le DOM autour du sidebar change (header dynamique, bannières, etc.)
+            const ro = new MutationObserver(() => applyOffset());
+            ro.observe(document.body, { childList: true, subtree: false });
+            // Recalcul ponctuel après chargement complet (images/polices peuvent changer la hauteur du header)
+            window.addEventListener('load', () => setTimeout(applyOffset, 500));
+            setTimeout(applyOffset, 1000);
+            setTimeout(applyOffset, 3000);
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
     })();
 
 })();
