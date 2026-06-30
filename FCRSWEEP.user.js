@@ -158,6 +158,10 @@
 
     let FC = getFCFromURL();
 
+    // Détection globale page EditItemsApp — utilisée pour adapter le thème (lisibilité)
+    // sans jamais toucher au rendu de FC Research.
+    const FCR_IS_EDITITEMS_PAGE = window.location.pathname.startsWith('/app/edititems');
+
     // ════════════════════════════════════════════════════════════════
     // ===== UTILITAIRES =====
     // ════════════════════════════════════════════════════════════════
@@ -1604,6 +1608,16 @@ body::after {
         }
         ` : ''}
         ${t.isAnimated && t.animCSS ? t.animCSS : ''}
+        ${FCR_IS_EDITITEMS_PAGE ? `
+        /* EditItemsApp uniquement : enlève la transparence des zones de saisie et boutons cliquables */
+        input, select, textarea, button, [role="button"],
+        [class*="button" i], [class*="btn" i], [class*="clickable" i],
+        div[onclick], div[tabindex], a[role], [aria-pressed], [aria-selected] {
+            background-color: ${t.bg2} !important;
+            color: #f3f5fa !important;
+        }
+        input::placeholder, textarea::placeholder { color: #9aa3b5 !important; opacity: 1 !important; }
+        ` : ''}
         `;
         }
 
