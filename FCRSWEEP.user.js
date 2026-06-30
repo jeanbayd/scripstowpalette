@@ -10,6 +10,7 @@
 // @match        https://fcresearch-eu.aka.amazon.com/*
 // @match        https://qi-fcresearch-eu.corp.amazon.com/ETZ2*
 // @match        https://fcresearch-eu.aka.amazon.com/*/results?s=*
+// @match        https://*.aka.amazon.com/app/edititems*
 // @grant        GM_addStyle
 // @grant        GM_openInTab
 // @grant        GM_xmlhttpRequest
@@ -3742,7 +3743,7 @@ body::after {
             fab.id = 'fcr-problem-fab';
             fab.title = 'Problems résumé';
             fab.style.cssText = `
-                position:fixed; bottom:24px; right:140px; z-index:99990;
+                position:fixed; bottom:24px; right:200px; z-index:99990;
                 width:48px; height:48px; border-radius:50%;
                 background:${isDark ? (t.isGradient ? t.gradBtn : t.bg3) : '#cc0000'};
                 color:${accentColor}; font-size:20px;
@@ -3775,7 +3776,7 @@ body::after {
             const panel = document.createElement('div');
             panel.id = 'fcr-problem-panel';
             panel.style.cssText = `
-                position:fixed; bottom:82px; right:140px; z-index:99989;
+                position:fixed; bottom:82px; right:200px; z-index:99989;
                 width:440px; border-radius:12px;
                 background:${panelBg}; border:1px solid ${borderColor};
                 box-shadow:0 8px 32px rgba(0,0,0,0.4);
@@ -4756,6 +4757,582 @@ body::after {
         } else {
             init();
         }
+    })();
+
+    // ════════════════════════════════════════════════════════════════
+    // ===== QUICK STATUS CHANGE (Inventory FC Research → Edit Item intégré) =====
+    // ════════════════════════════════════════════════════════════════
+    (function quickStatusChange() {
+
+        const EDIT_ITEMS_PATH = '/app/edititems';
+        const isEditItemsPage = window.location.pathname.startsWith(EDIT_ITEMS_PATH);
+        const inIframe = window.self !== window.top;
+
+        const STATUS_DEFS = [
+            { key: 'SELLABLE',         label: 'Sellable',         match: 'inventory' },
+            { key: 'PENDING_RESEARCH', label: 'Pending Research', match: 'pending research' },
+            { key: 'UNSELLABLE',       label: 'Unsellable',       match: 'unsellable' },
+            { key: 'PENDING_REPAIR',   label: 'Pending Repair',   match: 'pending repair' },
+        ];
+
+        GM_addStyle(`
+            .fcr-status-arrow {
+                display:inline-block;
+                margin-left:8px;
+                cursor:pointer;
+                color:#FFA500;
+                font-weight:900;
+                font-size:14px;
+                user-select:none;
+            }
+            .fcr-status-arrow:hover { color:#FFD24D; }
+            .fcr-status-header-cell {
+                color:#FFD24D !important;
+                font-weight:700;
+            }
+            .fcr-status-cell {
+                text-align:center;
+                white-space:nowrap;
+            }
+            .fcr-status-menu {
+                position:absolute;
+                z-index:999999;
+                background:#1c1c1c;
+                border:1px solid #444;
+                border-radius:6px;
+                box-shadow:0 4px 12px rgba(0,0,0,0.4);
+                min-width:160px;
+                overflow:hidden;
+            }
+            .fcr-status-menu-item {
+                padding:8px 12px;
+                color:#fff;
+                font-size:13px;
+                cursor:pointer;
+            }
+            .fcr-status-menu-item:hover { background:#FFA500; color:#000; }
+            .fcr-status-toast {
+                position:fixed;
+                bottom:24px;
+                right:24px;
+                background:#1c1c1c;
+                color:#FFD24D;
+                border:1px solid #FFA500;
+                padding:12px 16px;
+                border-radius:8px;
+                font-size:13px;
+                z-index:2147483647;
+                box-shadow:0 4px 12px rgba(0,0,0,0.4);
+                max-width:320px;
+            }
+            .fcr-status-overlay {
+                position:fixed;
+                inset:0;
+                background:rgba(0,0,0,0.6);
+                z-index:2147483000;
+                display:flex;
+                align-items:center;
+                justify-content:center;
+            }
+            .fcr-status-modal {
+                background:#fff;
+                width:min(1000px, 92vw);
+                height:min(750px, 90vh);
+                border-radius:10px;
+                overflow:hidden;
+                position:relative;
+                box-shadow:0 10px 40px rgba(0,0,0,0.5);
+                display:flex;
+                flex-direction:column;
+            }
+            .fcr-status-modal-header {
+                background:#0b2e33;
+                color:#fff;
+                padding:10px 16px;
+                display:flex;
+                align-items:center;
+                justify-content:space-between;
+                font-weight:700;
+                font-size:14px;
+            }
+            .fcr-status-modal-close {
+                cursor:pointer;
+                font-size:18px;
+                line-height:1;
+                color:#fff;
+                background:none;
+                border:none;
+                padding:4px 8px;
+            }
+            .fcr-status-modal-close:hover { color:#FFA500; }
+            .fcr-status-modal iframe {
+                flex:1;
+                border:none;
+                width:100%;
+            }
+            .fcr-status-modal-loading {
+                position:absolute;
+                inset:0;
+                top:42px;
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                background:#fff;
+                color:#555;
+                font-size:14px;
+            }
+        `);
+
+        // ---------- Partie A : flèche + menu dans le tableau Inventory (FC Research) ----------
+        function initInventoryArrows() {
+            if (isEditItemsPage) return;
+
+            function findInventoryTable() {
+                const tables = document.querySelectorAll('table');
+                console.log('[FCR Quick Status] tables trouvées sur la page:', tables.length);
+                for (const t of tables) {
+                    const headerText = (t.querySelector('thead, tr') || {}).textContent || '';
+                    if (headerText.includes('Disposition') && headerText.includes('Container')) {
+                        console.log('[FCR Quick Status] table Inventory détectée ✅', t);
+                        return t;
+                    }
+                }
+                console.log('[FCR Quick Status] aucune table avec "Container" + "Disposition" trouvée. En-têtes vus:',
+                    Array.from(tables).map(t => (t.querySelector('thead, tr') || {}).textContent?.slice(0, 80)));
+                return null;
+            }
+
+            function getColumnIndex(table, label) {
+                const headerCells = table.querySelectorAll('thead th, tr:first-child th, tr:first-child td');
+                let idx = -1;
+                headerCells.forEach((cell, i) => {
+                    if (idx === -1 && cell.textContent.trim().toLowerCase().startsWith(label.toLowerCase())) idx = i;
+                });
+                return idx;
+            }
+
+            function processTable() {
+                const table = findInventoryTable();
+                if (!table) return;
+
+                const containerIdx   = getColumnIndex(table, 'Container');
+                const asinIdx        = getColumnIndex(table, 'ASIN');
+                const fcskuIdx       = getColumnIndex(table, 'FCSku');
+                const dispositionIdx = getColumnIndex(table, 'Disposition');
+                console.log('[FCR Quick Status] index colonnes — Container:', containerIdx, 'ASIN:', asinIdx, 'FCSku:', fcskuIdx, 'Disposition:', dispositionIdx);
+                if (containerIdx === -1 || asinIdx === -1) return;
+                if (fcskuIdx === -1 && dispositionIdx === -1) return;
+
+                // Ajoute l'en-tête de la nouvelle colonne "Statut" une seule fois
+                const headerRow = table.querySelector('thead tr') || table.querySelector('tr');
+                if (headerRow && !headerRow.dataset.fcrStatusHeaderAdded) {
+                    headerRow.dataset.fcrStatusHeaderAdded = '1';
+                    const th = document.createElement(headerRow.querySelector('th') ? 'th' : 'td');
+                    th.textContent = '⚡ Statut';
+                    th.className = 'fcr-status-header-cell';
+                    headerRow.appendChild(th);
+                }
+
+                const allRows = table.querySelectorAll('tbody tr, tr');
+                const rows = Array.from(allRows).filter(r => r !== headerRow);
+                console.log('[FCR Quick Status] lignes de données trouvées:', rows.length);
+                rows.forEach(row => {
+                    if (row.dataset.fcrStatusArrow) return;
+                    const cells = row.querySelectorAll('td');
+                    if (!cells.length) return;
+                    row.dataset.fcrStatusArrow = '1';
+
+                    const container = (cells[containerIdx]?.textContent || '').trim();
+                    const asin      = (cells[asinIdx]?.textContent || '').trim();
+                    const fcsku     = fcskuIdx !== -1 ? (cells[fcskuIdx]?.textContent || '').trim() : '';
+                    if (!container || !asin) return;
+
+                    const newCell = document.createElement('td');
+                    newCell.className = 'fcr-status-cell';
+                    const arrow = document.createElement('span');
+                    arrow.textContent = '➜';
+                    arrow.title = 'Changer le statut inventaire';
+                    arrow.className = 'fcr-status-arrow';
+                    newCell.appendChild(arrow);
+                    row.appendChild(newCell);
+
+                    arrow.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        openStatusMenu(arrow, container, asin, fcsku);
+                    });
+                });
+            }
+
+            let menuEl = null;
+            function closeStatusMenu() {
+                if (menuEl) { menuEl.remove(); menuEl = null; }
+                document.removeEventListener('click', closeStatusMenu);
+            }
+
+            function openStatusMenu(anchor, container, asin, fcsku) {
+                closeStatusMenu();
+                menuEl = document.createElement('div');
+                menuEl.className = 'fcr-status-menu';
+                STATUS_DEFS.forEach(s => {
+                    const item = document.createElement('div');
+                    item.className = 'fcr-status-menu-item';
+                    item.textContent = s.label;
+                    item.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        launchStatusChange(container, asin, fcsku, s.key);
+                        closeStatusMenu();
+                    });
+                    menuEl.appendChild(item);
+                });
+                document.body.appendChild(menuEl);
+                const rect = anchor.getBoundingClientRect();
+                menuEl.style.left = (rect.left + window.scrollX) + 'px';
+                menuEl.style.top  = (rect.bottom + window.scrollY + 4) + 'px';
+                setTimeout(() => document.addEventListener('click', closeStatusMenu), 0);
+            }
+
+            function buildEditItemsURL(container, asin, fcsku, statusKey) {
+                const base = 'https://aft-qt-eu.aka.amazon.com';
+                return `${base}${EDIT_ITEMS_PATH}?experience=Desktop`
+                    + `&fcrContainer=${encodeURIComponent(container)}`
+                    + `&fcrItem=${encodeURIComponent(asin)}`
+                    + `&fcrFcsku=${encodeURIComponent(fcsku || '')}`
+                    + `&fcrStatus=${encodeURIComponent(statusKey)}`
+                    + `&fcrAutofill=1`;
+            }
+
+            function launchStatusChange(container, asin, fcsku, statusKey) {
+                const url = buildEditItemsURL(container, asin, fcsku, statusKey);
+                openEditItemsModal(url, container, asin);
+            }
+
+            function openEditItemsModal(url, container, asin) {
+                const overlay = document.createElement('div');
+                overlay.className = 'fcr-status-overlay';
+
+                const modal = document.createElement('div');
+                modal.className = 'fcr-status-modal';
+
+                const header = document.createElement('div');
+                header.className = 'fcr-status-modal-header';
+                header.innerHTML = `<span>Edit Item — Container ${container} / Item ${asin}</span>`;
+                const closeBtn = document.createElement('button');
+                closeBtn.className = 'fcr-status-modal-close';
+                closeBtn.textContent = '✕';
+                header.appendChild(closeBtn);
+
+                const loading = document.createElement('div');
+                loading.className = 'fcr-status-modal-loading';
+                loading.textContent = '⏳ Chargement d\'Edit Item…';
+
+                const iframe = document.createElement('iframe');
+                iframe.src = url;
+
+                modal.appendChild(header);
+                modal.appendChild(loading);
+                modal.appendChild(iframe);
+                overlay.appendChild(modal);
+                document.body.appendChild(overlay);
+
+                function closeModal() {
+                    overlay.remove();
+                    window.removeEventListener('message', onMessage);
+                    clearTimeout(fallbackTimer);
+                }
+                closeBtn.addEventListener('click', closeModal);
+                overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+                function onMessage(e) {
+                    if (!e.data || e.data.type !== 'fcr-edititems-ready') return;
+                    loading.style.display = 'none';
+                    clearTimeout(fallbackTimer);
+                }
+                window.addEventListener('message', onMessage);
+
+                // Si l'app ne peut pas être affichée en cadre intégré (X-Frame-Options/CSP),
+                // aucun message ne sera reçu : on bascule alors sur un nouvel onglet classique.
+                const fallbackTimer = setTimeout(() => {
+                    loading.textContent = '⚠️ Affichage intégré impossible, ouverture dans un nouvel onglet…';
+                    setTimeout(() => {
+                        closeModal();
+                        GM_openInTab(url, { active: true });
+                    }, 1200);
+                }, 5000);
+            }
+
+            const observer = new MutationObserver(() => processTable());
+            observer.observe(document.body, { childList: true, subtree: true });
+            processTable();
+        }
+
+        // ---------- Partie B : autofill sur EditItemsApp (s'exécute aussi dans l'iframe) ----------
+        function initEditItemsAutofill() {
+            if (!isEditItemsPage) return;
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('fcrAutofill') !== '1') return;
+
+            // Signale au parent (si on est dans l'iframe de la modale) que la page a bien chargé.
+            if (inIframe) {
+                try { window.top.postMessage({ type: 'fcr-edititems-ready' }, '*'); } catch (e) {}
+            }
+
+            const container    = params.get('fcrContainer') || '';
+            const item         = params.get('fcrItem') || '';
+            const fcsku        = params.get('fcrFcsku') || '';
+            const targetStatus = params.get('fcrStatus') || '';
+
+            function setNativeValue(el, value) {
+                const proto = Object.getPrototypeOf(el);
+                const desc = Object.getOwnPropertyDescriptor(proto, 'value')
+                    || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+                desc.set.call(el, value);
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            function findLabeledInput(labelText) {
+                const candidates = Array.from(document.querySelectorAll('label, div, span'));
+                const labelEl = candidates.find(el =>
+                    el.children.length === 0 && el.textContent.trim().toLowerCase() === labelText.toLowerCase()
+                );
+                if (!labelEl) return document.querySelector('input[type="text"]');
+                let el = labelEl.nextElementSibling;
+                while (el && el.tagName !== 'INPUT') el = el.nextElementSibling;
+                if (el) return el;
+                const wrap = labelEl.closest('div');
+                return wrap ? wrap.querySelector('input') : document.querySelector('input[type="text"]');
+            }
+
+            function clickContinue() {
+                const buttons = Array.from(document.querySelectorAll('button, a'));
+                const btn = buttons.find(b => b.textContent.trim().toLowerCase().startsWith('continue'));
+                if (btn) btn.click();
+            }
+
+            function waitForHeading(text, timeout = 8000) {
+                return new Promise((resolve, reject) => {
+                    const check = () => {
+                        const els = Array.from(document.querySelectorAll('div, h1, h2, h3'));
+                        return els.find(el =>
+                            el.children.length === 0 && el.textContent.trim().toLowerCase().includes(text.toLowerCase())
+                        );
+                    };
+                    const found = check();
+                    if (found) return resolve(found);
+                    const obs = new MutationObserver(() => {
+                        const f = check();
+                        if (f) { obs.disconnect(); resolve(f); }
+                    });
+                    obs.observe(document.body, { childList: true, subtree: true });
+                    setTimeout(() => { obs.disconnect(); reject(new Error('timeout: ' + text)); }, timeout);
+                });
+            }
+
+            function fillAndContinue(labelText, value) {
+                return waitForElement('input').then(() => {
+                    const input = findLabeledInput(labelText) || document.querySelector('input[type="text"]');
+                    if (!input) return;
+                    input.focus();
+                    setNativeValue(input, value);
+                    setTimeout(clickContinue, 150);
+                });
+            }
+
+            function selectFcskuIfNeeded() {
+                return waitForHeading('Select').then(heading => {
+                    const txt = heading.textContent.toLowerCase();
+                    if (txt.includes('new inventory state')) return; // déjà sur le bon écran
+                    if (txt.includes('fcsku') || txt.includes('select item')) {
+                        const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                        let target = null;
+                        if (fcsku) target = radios.find(r => (r.closest('div')?.textContent || '').includes(fcsku));
+                        if (!target) target = radios[0];
+                        if (target) target.click();
+                        setTimeout(clickContinue, 150);
+                    }
+                }).catch(() => {});
+            }
+
+            function showFcrToast(msg) {
+                const toast = document.createElement('div');
+                toast.className = 'fcr-status-toast';
+                toast.textContent = msg;
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 6000);
+            }
+
+            function selectTargetStatus() {
+                const def = STATUS_DEFS.find(s => s.key === targetStatus);
+                if (!def) return;
+                waitForHeading('Select new inventory state').then(() => {
+                    setTimeout(() => {
+                        const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                        const target = radios.find(r => {
+                            const txt = (r.closest('div')?.textContent || '').toLowerCase();
+                            return txt.includes(def.match);
+                        });
+                        if (target) {
+                            target.click();
+                            showFcrToast('Statut "' + def.label + '" présélectionné — vérifie puis clique Continue (et choisis le type de disposition si demandé).');
+                        }
+                    }, 200);
+                }).catch(() => {});
+            }
+
+            // Séquence : container -> item -> (fcsku si présent) -> présélection du statut
+            fillAndContinue('Container', container)
+                .then(() => waitForElement('input'))
+                .then(() => fillAndContinue('Item barcode', item))
+                .then(() => selectFcskuIfNeeded())
+                .then(() => selectTargetStatus())
+                .catch(err => console.warn('[FCR Quick Status]', err));
+        }
+
+        // NOTE: la détection par ligne dans le tableau Inventory perturbait le rendu du site
+        // (double en-tête de colonnes). Désactivée au profit de la bulle flottante, plus simple.
+        // initInventoryArrows();
+        initEditItemsAutofill();
+
+    })();
+
+    // ════════════════════════════════════════════════════════════════
+    // ===== FAB EDIT ITEM (même style que le module Étiquettes) =====
+    // ════════════════════════════════════════════════════════════════
+    (function floatingEditItemBubble() {
+
+        const EDIT_ITEMS_PATH = '/app/edititems';
+        const isEditItemsPage = window.location.pathname.startsWith(EDIT_ITEMS_PATH);
+        if (isEditItemsPage) return; // pas besoin du FAB sur Edit Item lui-même
+
+        function buildEditItemsBaseURL() {
+            // Domaine fixe de l'app Edit Item (différent du domaine FC Research).
+            return 'https://aft-qt-eu.aka.amazon.com' + EDIT_ITEMS_PATH + '?experience=Desktop';
+        }
+
+        function openInWindow() {
+            const url = buildEditItemsBaseURL();
+            const w = 460, h = 700;
+            const left = (window.screen.width - w) - 40;
+            const top = (window.screen.height - h) - 80;
+            const win = window.open(
+                url, 'fcrEditItemPopup',
+                `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes,toolbar=no,menubar=no,location=no,status=no`
+            );
+            if (win) win.focus();
+            else alert('Le navigateur a bloqué l\'ouverture de la fenêtre Edit Item. Autorise les popups pour ce site puis réessaie.');
+        }
+
+        function buildFab() {
+            if (document.getElementById('fcr-edititems-fab')) return;
+
+            const t = THEMES[currentTheme] || THEMES.bleu;
+            const v = etiq2_getThemeVars(t);
+
+            // ── FAB ──────────────────────────────────────────────────
+            const fab = document.createElement('div');
+            fab.id = 'fcr-edititems-fab';
+            fab.title = 'Edit Item';
+            fab.innerHTML = '✏️';
+            fab.style.cssText = `
+                position:fixed; bottom:24px; right:140px; z-index:99990;
+                width:48px; height:48px; border-radius:50%;
+                background:${v.isDark ? (t.isGradient ? t.gradBtn : t.bg3) : '#ff9900'};
+                color:${v.accentColor}; font-size:22px;
+                display:flex; align-items:center; justify-content:center;
+                cursor:pointer; box-shadow:0 4px 16px rgba(0,0,0,0.35);
+                border:2px solid ${v.accentColor};
+                transition:transform 0.2s, box-shadow 0.2s;
+                user-select:none;
+            `;
+            fab.addEventListener('mouseenter', () => { fab.style.transform = 'scale(1.12)'; });
+            fab.addEventListener('mouseleave', () => { fab.style.transform = 'scale(1)'; });
+            fab.addEventListener('click', toggle);
+            document.body.appendChild(fab);
+
+            // ── Panneau ──────────────────────────────────────────────
+            const panel = document.createElement('div');
+            panel.id = 'fcr-edititems-panel';
+            panel.style.cssText = `
+                position:fixed; bottom:82px; right:140px; z-index:99989;
+                width:420px; height:620px; max-width:92vw; max-height:80vh;
+                border-radius:12px;
+                background:${v.panelBg}; border:1px solid ${v.borderColor};
+                box-shadow:0 8px 32px rgba(0,0,0,0.4);
+                font-family:Arial,sans-serif; font-size:13px;
+                display:none; flex-direction:column; overflow:hidden;
+            `;
+
+            const header = document.createElement('div');
+            header.style.cssText = `
+                background:${v.headerBg}; padding:10px 14px;
+                display:flex; align-items:center; justify-content:space-between;
+                border-bottom:1px solid ${v.borderColor}; flex-shrink:0;
+            `;
+            header.innerHTML = `
+                <span style="font-size:11px;font-weight:700;color:${v.accentColor};text-transform:uppercase;letter-spacing:0.5px;">✏️ EDIT ITEM</span>
+                <span style="display:flex;gap:10px;align-items:center;">
+                    <span id="fcr-edititems-popout" title="Ouvrir dans une fenêtre" style="cursor:pointer;color:${v.accentColor};font-size:14px;">⤢</span>
+                    <span id="fcr-edititems-reload" title="Recharger" style="cursor:pointer;color:${v.accentColor};font-size:14px;">⟳</span>
+                    <span id="fcr-edititems-close" title="Fermer" style="cursor:pointer;color:${v.accentColor};font-size:16px;font-weight:700;line-height:1;">✕</span>
+                </span>
+            `;
+            panel.appendChild(header);
+
+            const body = document.createElement('div');
+            body.style.cssText = 'position:relative; flex:1; background:#fff;';
+            const loading = document.createElement('div');
+            loading.id = 'fcr-edititems-loading';
+            loading.style.cssText = 'position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#555; font-size:13px; text-align:center; padding:16px;';
+            loading.textContent = '⏳ Chargement d\'Edit Item…';
+            const iframe = document.createElement('iframe');
+            iframe.id = 'fcr-edititems-iframe';
+            iframe.style.cssText = 'width:100%; height:100%; border:none; display:block;';
+            body.appendChild(loading);
+            body.appendChild(iframe);
+            panel.appendChild(body);
+
+            document.body.appendChild(panel);
+
+            let fallbackTimer = null;
+            function load() {
+                loading.style.display = 'flex';
+                loading.textContent = '⏳ Chargement d\'Edit Item…';
+                iframe.src = buildEditItemsBaseURL();
+                clearTimeout(fallbackTimer);
+                fallbackTimer = setTimeout(() => {
+                    loading.innerHTML = '⚠️ Affichage intégré bloqué par le site.<br><br>Utilise le bouton ⤢ ci-dessus pour ouvrir Edit Item dans une fenêtre.';
+                }, 4000);
+            }
+            iframe.addEventListener('load', () => {
+                // Le 'load' se déclenche même si le contenu est bloqué (X-Frame-Options) ;
+                // on masque le message de chargement mais le fallback texte reste si rien ne s'affiche après le délai.
+                clearTimeout(fallbackTimer);
+                loading.style.display = 'none';
+            });
+
+            function toggle() {
+                const visible = panel.style.display !== 'none';
+                if (visible) {
+                    panel.style.display = 'none';
+                } else {
+                    panel.style.display = 'flex';
+                    if (!iframe.src) load();
+                }
+            }
+
+            header.querySelector('#fcr-edititems-close').addEventListener('click', toggle);
+            header.querySelector('#fcr-edititems-reload').addEventListener('click', load);
+            header.querySelector('#fcr-edititems-popout').addEventListener('click', openInWindow);
+
+            window.fcrEditItemsToggle = toggle;
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', buildFab);
+        } else {
+            setTimeout(buildFab, 1000);
+        }
+
     })();
 
 })();
