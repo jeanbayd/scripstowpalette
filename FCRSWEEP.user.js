@@ -1617,6 +1617,13 @@ body::after {
             color: #f3f5fa !important;
         }
         input::placeholder, textarea::placeholder { color: #9aa3b5 !important; opacity: 1 !important; }
+        /* EditItemsApp uniquement : couleur d'écriture lisible quel que soit le thème.
+           Texte clair + léger contour sombre pour rester lisible même sur les zones
+           plus claires d'une photo de fond, sans toucher aux fonds/panneaux eux-mêmes. */
+        body, body *:not(input):not(select):not(textarea):not(button):not(svg):not(path):not(img) {
+            color: #f5f7fb !important;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.75);
+        }
         ` : ''}
         `;
         }
@@ -2029,23 +2036,25 @@ body::after {
             badge.dataset.priceState = 'loading';
 
             // Fonction de restyle du badge selon le thème courant
+            // (fond plein + texte clair fixe pour rester lisible quel que soit le thème,
+            // au lieu d'un dégradé qui rendait le texte illisible par endroits)
             function styleBadgeForTheme() {
                 const t = THEMES[currentTheme] || THEMES.bleu;
                 const state = badge.dataset.priceState;
                 if (state === 'ok') {
-                    badge.style.background   = t.isBase ? '#ff9900' : (t.isGradient ? t.gradBtn : t.bg3);
-                    badge.style.color        = t.isBase ? '#111'    : t.accent;
-                    badge.style.borderColor  = t.isBase ? '#e47911' : t.accentDark;
+                    badge.style.background   = t.isBase ? '#ff9900' : t.bg3;
+                    badge.style.color        = t.isBase ? '#111'    : '#f5f7fb';
+                    badge.style.borderColor  = t.isBase ? '#e47911' : t.accent;
                     badge.style.boxShadow    = t.isBase ? 'none'    : `0 0 6px ${t.accent}55`;
                 } else if (state === 'nd') {
                     badge.style.background   = t.isBase ? '#888' : t.bg3;
-                    badge.style.color        = t.isBase ? '#fff' : '#aab4c8';
+                    badge.style.color        = t.isBase ? '#fff' : '#cdd3e0';
                     badge.style.borderColor  = t.isBase ? '#666' : t.accentDark;
                     badge.style.boxShadow    = 'none';
                 } else {
                     // loading
                     badge.style.background   = t.isBase ? '#eee' : t.bg2;
-                    badge.style.color        = t.isBase ? '#888' : '#aab4c8';
+                    badge.style.color        = t.isBase ? '#888' : '#cdd3e0';
                     badge.style.borderColor  = t.isBase ? '#ccc' : t.accentDark;
                     badge.style.boxShadow    = 'none';
                 }
