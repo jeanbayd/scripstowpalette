@@ -11,6 +11,7 @@
 // @match        https://qi-fcresearch-eu.corp.amazon.com/ETZ2*
 // @match        https://fcresearch-eu.aka.amazon.com/*/results?s=*
 // @match        https://*.aka.amazon.com/app/edititems*
+// @match        https://aft-poirot-website-dub.dub.proxy.amazon.com/?tool=V3
 // @grant        GM_addStyle
 // @grant        GM_openInTab
 // @grant        GM_xmlhttpRequest
