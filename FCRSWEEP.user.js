@@ -1284,48 +1284,11 @@ body::after {
     top: -40px;
     left: 32%;
     width: 1px;
-    height: 16px;
-    background: linear-gradient(180deg, transparent, #7afcff55, transparent);
+    height: 30px;
+    background: linear-gradient(180deg, transparent, #7afcffaa, transparent);
     pointer-events: none;
     z-index: 9997;
-    opacity: 0.5;
     animation: fcr-neonbleu-rain 1.5s linear infinite;
-}
-html::before {
-    content: '';
-    position: fixed;
-    top: -40px;
-    left: 68%;
-    width: 1px;
-    height: 26px;
-    background: linear-gradient(180deg, transparent, #7afcff88, transparent);
-    pointer-events: none;
-    z-index: 9997;
-    opacity: 0.7;
-    animation: fcr-neonbleu-rain 1.9s linear infinite;
-    animation-delay: -0.6s;
-    box-shadow:
-        180px 260px 0 -0.4px #7afcff55,
-        -260px 480px 0 -0.4px #7afcff44,
-        420px 90px 0 -0.4px #7afcff50;
-}
-html::after {
-    content: '';
-    position: fixed;
-    top: -40px;
-    left: 14%;
-    width: 1px;
-    height: 22px;
-    background: linear-gradient(180deg, transparent, #7afcff66, transparent);
-    pointer-events: none;
-    z-index: 9997;
-    opacity: 0.6;
-    animation: fcr-neonbleu-rain 1.3s linear infinite;
-    animation-delay: -1.1s;
-    box-shadow:
-        -180px 340px 0 -0.4px #7afcff40,
-        300px 560px 0 -0.4px #7afcff38,
-        -420px 150px 0 -0.4px #7afcff45;
 }
 #fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel {
     animation: fcr-neonbleu-border 4s ease-in-out infinite !important;
@@ -1925,10 +1888,12 @@ html::after {
     // ════════════════════════════════════════════════════════════════
     // ===== PRIX AMAZON.FR =====
     // ════════════════════════════════════════════════════════════════
-    if (isModuleEnabled('amazonFrPrice')) {
-        const amazonFrPriceCache = {};
+    // Cache + fetch hissés hors du "if" pour rester utilisables par d'autres
+    // fonctionnalités (ex: Prix Total Inventaire) même si le badge par-produit
+    // est désactivé — seul le fetch réel est gardé par isModuleEnabled().
+    const amazonFrPriceCache = {};
 
-        function fetchAmazonFrPrice(asin, callback) {
+    function fetchAmazonFrPrice(asin, callback) {
             if (amazonFrPriceCache[asin] !== undefined) {
                 callback(amazonFrPriceCache[asin]);
                 return;
@@ -2034,6 +1999,7 @@ html::after {
             });
         }
 
+    if (isModuleEnabled('amazonFrPrice')) {
         function injectAmazonFrPrice() {
             // Cherche l'ASIN dans la table produit
             const asinTh = Array.from(document.querySelectorAll('[data-section-type="product"] table.a-keyvalue th'))
@@ -2769,6 +2735,102 @@ html::after {
                 onerror: function() { resolve({ weight: 0, unit: 'lbs' }); }
             });
         });
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // ===== PRIX TOTAL INVENTAIRE (priorité au prix barré Amazon.fr) =====
+    // ════════════════════════════════════════════════════════════════
+    function addTotalPriceButton() {
+        if (!isModuleEnabled('amazonFrPrice')) return;
+        const inventoryHeader = document.querySelector('[data-section-type="inventory"] .section-title');
+        if (!inventoryHeader || document.getElementById('totalPriceButton')) return;
+        const button = document.createElement('button');
+        button.id = 'totalPriceButton';
+        button.className = 'LoadPrep-button';
+        button.textContent = '💰 Prix Total';
+        button.title = "Valeur totale de l'inventaire (priorité au prix barré Amazon.fr)";
+        button.addEventListener('click', calculateInventoryTotalPrice);
+        inventoryHeader.appendChild(button);
+    }
+
+    // Parse "36,59 €", "1 234,56 €", "36.59€"... → 36.59 (Number), ou null si illisible.
+    // Gère virgule ET point comme séparateur décimal selon lequel apparaît en dernier,
+    // et retire les espaces (normaux + insécables) utilisés comme séparateurs de milliers.
+    function parseAmzFrPriceToNumber(str) {
+        if (!str) return null;
+        const cleaned = str.replace(/[^\d.,\s\u00A0]/g, '').trim();
+        if (!cleaned) return null;
+        let normalized = cleaned.replace(/[\s\u00A0]/g, '');
+        const lastComma = normalized.lastIndexOf(',');
+        const lastDot = normalized.lastIndexOf('.');
+        if (lastComma > -1 && lastDot > -1) {
+            if (lastComma > lastDot) normalized = normalized.replace(/\./g, '').replace(',', '.');
+            else normalized = normalized.replace(/,/g, '');
+        } else if (lastComma > -1) {
+            normalized = normalized.replace(',', '.');
+        }
+        const num = parseFloat(normalized);
+        return isNaN(num) ? null : num;
+    }
+
+    async function calculateInventoryTotalPrice() {
+        const button = document.getElementById('totalPriceButton');
+        if (!button) return;
+        const originalText = '💰 Prix Total';
+        button.disabled = true;
+        button.textContent = 'Calcul...';
+        button.style.color = '';
+        try {
+            const rows = document.querySelectorAll('#table-inventory tbody tr');
+            const asinQuantities = {}, asins = [];
+            rows.forEach(row => {
+                const asinCell = row.querySelector('td:nth-child(2) > a');
+                const quantityCell = row.querySelector('td:nth-child(6)');
+                const quantity = quantityCell ? (parseInt(quantityCell.innerText) || 0) : 0;
+                const asin = asinCell ? asinCell.innerText.trim() : '';
+                if (!asin || quantity <= 0) return;
+                if (!asinQuantities[asin]) { asinQuantities[asin] = quantity; asins.push(asin); }
+                else asinQuantities[asin] += quantity;
+            });
+
+            if (asins.length === 0) {
+                button.textContent = 'Aucun item';
+                setTimeout(() => { button.textContent = originalText; button.disabled = false; }, 2000);
+                return;
+            }
+
+            const results = await Promise.all(asins.map(asin => new Promise(resolve => {
+                fetchAmazonFrPrice(asin, (result) => resolve({ asin, result }));
+            })));
+
+            let total = 0, missingCount = 0, usedListPriceCount = 0;
+            results.forEach(({ asin, result }) => {
+                const listPriceNum = parseAmzFrPriceToNumber(result && result.listPrice);
+                const priceNum     = parseAmzFrPriceToNumber(result && result.price);
+                // Priorité au prix barré (List Price) s'il est lisible, sinon on retombe sur le prix courant
+                const unitPrice = listPriceNum !== null ? listPriceNum : priceNum;
+                if (listPriceNum !== null) usedListPriceCount++;
+                if (unitPrice === null) { missingCount++; return; }
+                total += unitPrice * asinQuantities[asin];
+            });
+
+            const totalFormatted = total.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            if (missingCount > 0) {
+                button.textContent = `💰 ~${totalFormatted} € (${missingCount}/${asins.length} ASIN sans prix)`;
+                button.style.color = '#d3731e';
+                button.title = `Total incomplet : ${missingCount} ASIN sans prix trouvé sur amazon.fr. Prix barré utilisé pour ${usedListPriceCount} ASIN.`;
+            } else {
+                button.textContent = `💰 ${totalFormatted} €`;
+                button.style.color = '#3df70a';
+                button.title = `Valeur totale sur ${asins.length} ASIN distincts. Prix barré (List Price) utilisé pour ${usedListPriceCount} d'entre eux.`;
+            }
+        } catch (error) {
+            button.textContent = 'Erreur calcul prix';
+            button.style.color = 'red';
+            console.error('Erreur calcul prix total inventaire:', error);
+        } finally {
+            button.disabled = false;
+        }
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -3815,18 +3877,20 @@ html::after {
         const hasHistory   = !!document.querySelector('#table-inventory-history');
         const hasCsvBtn    = !!document.getElementById('csvExportButton');
         const hasWeightBtn = !!document.getElementById('weightButton');
+        const hasTotalPriceBtn = !!document.getElementById('totalPriceButton');
         const hasHistoryBtn = !!document.getElementById('csvHistoryButton');
 
         if (hasInventory) {
-            if (!hasWeightBtn)  addWeightButton();
-            if (!hasCsvBtn)     addCsvExportButton();
+            if (!hasWeightBtn)     addWeightButton();
+            if (!hasCsvBtn)        addCsvExportButton();
+            if (!hasTotalPriceBtn) addTotalPriceButton();
         }
         if (hasHistory && !hasHistoryBtn) addCsvHistoryButton();
     }, 800)); // debounce augmenté 500→800ms
     inventoryObserver.observe(inventoryRoot, { childList: true, subtree: true, attributes: false, characterData: false });
 
     setTimeout(() => {
-        if (document.querySelector('[data-section-type="inventory"]')) { addWeightButton(); addCsvExportButton(); }
+        if (document.querySelector('[data-section-type="inventory"]')) { addWeightButton(); addCsvExportButton(); addTotalPriceButton(); }
         if (document.querySelector('#table-inventory-history')) addCsvHistoryButton();
     }, 2500);
 
