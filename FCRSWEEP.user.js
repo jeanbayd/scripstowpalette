@@ -3795,7 +3795,7 @@ body::after {
 
     // ════════════════════════════════════════════════════════════════
     // ===== PROBLEM WIDGET — FAB flottant résumé des problèmes =====
-    // Lit #table-problems, groupe par Symptoms, affiche les 3 plus récents
+    // Lit #table-problems, affiche les 3 plus récents (tous types confondus, triés par date)
     // ════════════════════════════════════════════════════════════════
     (function() {
 
@@ -3817,12 +3817,27 @@ body::after {
             return '#aaa';
         }
 
+        function parseProblemDate(dateStr) {
+            if (!dateStr) return null;
+            const s = dateStr.trim();
+            // "YYYY-MM-DD HH:MM:SS" ou "YYYY-MM-DDTHH:MM:SS"
+            let m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+            if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+            // "DD/MM/YYYY HH:MM:SS" (format FR éventuel)
+            m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})[ T]?(\d{2})?:?(\d{2})?:?(\d{2})?/);
+            if (m) return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+            // "YYYY-MM-DD" seul
+            m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+            // Dernier recours : parsing natif du navigateur
+            const d = new Date(s);
+            return isNaN(d.getTime()) ? null : d;
+        }
+
         function timeAgo(dateStr) {
             if (!dateStr) return '';
-            // Format attendu : "2026-06-17 11:44:45"
-            const parsed = dateStr.replace(/(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, '$1T$2');
-            const d = new Date(parsed);
-            if (isNaN(d)) return dateStr;
+            const d = parseProblemDate(dateStr);
+            if (!d) return dateStr;
             const diffMs  = Date.now() - d.getTime();
             const diffMin = Math.floor(diffMs / 60000);
             const diffH   = Math.floor(diffMin / 60);
@@ -3853,26 +3868,20 @@ body::after {
                 };
             }).filter(Boolean);
 
-            // Grouper par Symptoms
-            const grouped = {};
-            problems.forEach(p => {
-                const cat = p.symptoms || 'Unknown';
-                if (!grouped[cat]) grouped[cat] = [];
-                grouped[cat].push(p);
-            });
+            // Tri strictement chronologique (plus récent → plus ancien), tous types confondus.
+            // Les dates non reconnues sont reléguées en fin de liste plutôt que de casser le tri.
+            const recent = problems.slice().sort((a, b) => {
+                const da = parseProblemDate(a.date);
+                const db = parseProblemDate(b.date);
+                if (!da && !db) return 0;
+                if (!da) return 1;
+                if (!db) return -1;
+                return db.getTime() - da.getTime();
+            }).slice(0, 3);
 
-            // Trier chaque groupe par date décroissante, garder les 3 plus récents
-            Object.keys(grouped).forEach(cat => {
-                grouped[cat].sort((a, b) => {
-                    const da = new Date(a.date.replace(/(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, '$1T$2'));
-                    const db = new Date(b.date.replace(/(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, '$1T$2'));
-                    return db - da;
-                });
-                grouped[cat] = grouped[cat].slice(0, 3);
-            });
-
-            return { grouped, total: problems.length };
+            return { recent, total: problems.length };
         }
+
 
         function buildProblemWidget() {
             if (document.getElementById('fcr-problem-fab')) return;
@@ -3888,7 +3897,6 @@ body::after {
             const borderColor = isDark ? t.accentDark : '#ddd';
             const subTextColor = isDark ? '#aab4c8' : '#666';
 
-            const categories = Object.keys(data.grouped);
             const totalProblems = data.total;
 
             // ── FAB ──
@@ -3959,80 +3967,48 @@ body::after {
             body.id = 'fcr-problem-body';
             body.style.cssText = `padding:12px 16px; overflow-y:auto; flex:1;`;
 
-            // Construire les catégories
-            categories.forEach(cat => {
-                const items = data.grouped[cat];
-
-                // Section header catégorie
-                const catHeader = document.createElement('div');
-                catHeader.style.cssText = `
-                    display:flex; align-items:center; justify-content:space-between;
-                    margin:12px 0 8px 0; cursor:pointer; user-select:none;
-                    padding-bottom:4px; border-bottom:1px solid ${borderColor};
-                `;
-                catHeader.innerHTML = `
-                    <span style="font-size:13px;font-weight:700;color:${accentColor};text-transform:uppercase;letter-spacing:0.4px;">
-                        ${cat}
-                    </span>
-                    <span style="font-size:12px;color:${subTextColor};font-weight:600;">
-                        ${items.length} récent${items.length > 1 ? 's' : ''} <span class="fcr-prob-arrow" style="font-size:10px;">▼</span>
-                    </span>
+            // Liste plate des 3 problèmes les plus récents (déjà triés du plus récent au plus ancien)
+            data.recent.forEach((p, i) => {
+                const statusColor = getStatusColor(p.status);
+                const card = document.createElement('div');
+                card.style.cssText = `
+                    background:${isDark ? t.bg1 + 'cc' : '#f8f8f8'};
+                    border:1px solid ${borderColor};
+                    border-left:4px solid ${statusColor};
+                    border-radius:7px; padding:10px 13px;
+                    margin-bottom:8px; font-size:12px;
                 `;
 
-                const catBody = document.createElement('div');
-                catBody.style.cssText = 'margin-bottom:6px;';
+                // ID tronqué + copier
+                const shortId = p.id.length > 40 ? '…' + p.id.slice(-30) : p.id;
 
-                items.forEach((p, i) => {
-                    const statusColor = getStatusColor(p.status);
-                    const card = document.createElement('div');
-                    card.style.cssText = `
-                        background:${isDark ? t.bg1 + 'cc' : '#f8f8f8'};
-                        border:1px solid ${borderColor};
-                        border-left:4px solid ${statusColor};
-                        border-radius:7px; padding:10px 13px;
-                        margin-bottom:8px; font-size:12px;
-                    `;
-
-                    // ID tronqué + copier
-                    const shortId = p.id.length > 40 ? '…' + p.id.slice(-30) : p.id;
-
-                    card.innerHTML = `
-                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-                            <span style="color:${subTextColor};font-size:11px;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px;" title="${p.id}">${shortId}</span>
-                            <span style="
-                                font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;
-                                background:${statusColor}22;color:${statusColor};border:1px solid ${statusColor}55;
-                                white-space:nowrap;flex-shrink:0;margin-left:8px;
-                            ">${p.status}</span>
-                        </div>
-                        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:2px;">
-                            <span style="color:${textColor};font-size:12px;font-weight:600;">📍 ${p.location}</span>
-                            <span style="color:${textColor};font-size:12px;font-weight:600;">👤 ${p.createdBy}</span>
-                        </div>
-                        <div style="color:${subTextColor};font-size:11px;margin-top:4px;" title="${p.date}">🕐 ${timeAgo(p.date)}</div>
-                        ${p.creator && p.creator !== p.createdBy ? `<div style="color:${subTextColor};font-size:11px;margin-top:3px;">📂 ${p.creator}</div>` : ''}
-                    `;
-                    catBody.appendChild(card);
-                });
-
-                // Toggle collapse catégorie
-                let collapsed = false;
-                catHeader.addEventListener('click', () => {
-                    collapsed = !collapsed;
-                    catBody.style.display = collapsed ? 'none' : 'block';
-                    catHeader.querySelector('.fcr-prob-arrow').textContent = collapsed ? '▶' : '▼';
-                });
-
-                body.appendChild(catHeader);
-                body.appendChild(catBody);
-
-                // Séparateur
-                if (cat !== categories[categories.length - 1]) {
-                    const sep = document.createElement('hr');
-                    sep.style.cssText = `border:none;border-top:1px solid ${borderColor};margin:4px 0;`;
-                    body.appendChild(sep);
-                }
+                card.innerHTML = `
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                        <span style="font-size:10px;font-weight:800;color:${accentColor};background:${accentColor}1a;border-radius:10px;padding:2px 7px;flex-shrink:0;">#${i + 1}</span>
+                        <span style="color:${subTextColor};font-size:11px;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;margin:0 8px;" title="${p.id}">${shortId}</span>
+                        <span style="
+                            font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;
+                            background:${statusColor}22;color:${statusColor};border:1px solid ${statusColor}55;
+                            white-space:nowrap;flex-shrink:0;
+                        ">${p.status}</span>
+                    </div>
+                    <div style="color:${textColor};font-size:12px;font-weight:700;margin-bottom:4px;">${p.symptoms}</div>
+                    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:2px;">
+                        <span style="color:${textColor};font-size:12px;font-weight:600;">📍 ${p.location}</span>
+                        <span style="color:${textColor};font-size:12px;font-weight:600;">👤 ${p.createdBy}</span>
+                    </div>
+                    <div style="color:${subTextColor};font-size:11px;margin-top:4px;" title="${p.date}">🕐 ${timeAgo(p.date)}</div>
+                    ${p.creator && p.creator !== p.createdBy ? `<div style="color:${subTextColor};font-size:11px;margin-top:3px;">📂 ${p.creator}</div>` : ''}
+                `;
+                body.appendChild(card);
             });
+
+            if (data.recent.length === 0) {
+                const empty = document.createElement('div');
+                empty.style.cssText = `text-align:center; padding:20px; color:${subTextColor}; font-size:12px;`;
+                empty.textContent = 'Aucun problème trouvé.';
+                body.appendChild(empty);
+            }
 
             panel.appendChild(header);
             panel.appendChild(body);
