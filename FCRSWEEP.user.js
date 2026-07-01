@@ -4566,9 +4566,9 @@ body::after {
         text-align: center;
         padding: 4mm 5mm; gap: 2.5mm;
     }
-    .etq-action { font-size:11pt; font-weight:bold; color:#000; line-height:1.1; }
-    .etq-title  { font-size:30pt; font-weight:bold; color:#000; line-height:1.05; word-wrap:break-word; }
-    .etq-sig    { font-size:15pt; font-weight:bold; color:#000; line-height:1.1; }`;
+    .etq-action { font-size:14pt; font-weight:bold; color:#000; line-height:1.1; }
+    .etq-title  { font-size:33pt; font-weight:bold; color:#000; line-height:1.05; word-wrap:break-word; }
+    .etq-sig    { font-size:18pt; font-weight:bold; color:#000; line-height:1.1; }`;
 
         // ── CSS Firefox (fenêtre réelle) — étiquette 50x35mm ───────────
         const cssFirefox = `
@@ -4586,9 +4586,9 @@ body::after {
         margin-top:-20mm;
         margin-left:25mm;
     }
-    .etq-action { font-size:13pt;  font-weight:bold; color:#000; }
-    .etq-title  { font-size:20pt; font-weight:bold; color:#000; word-wrap:break-word; }
-    .etq-sig    { font-size:12.5pt;  font-weight:bold; color:#000; }`;
+    .etq-action { font-size:16pt;  font-weight:bold; color:#000; }
+    .etq-title  { font-size:23pt; font-weight:bold; color:#000; word-wrap:break-word; }
+    .etq-sig    { font-size:15.5pt;  font-weight:bold; color:#000; }`;
 
         let pages = '';
         for (let i = 0; i < qty; i++) {
