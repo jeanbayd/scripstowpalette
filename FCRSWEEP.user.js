@@ -5645,6 +5645,27 @@ body::after {
     })();
 
     // ════════════════════════════════════════════════════════════════
+    // ===== UTILITAIRE — panneaux FAB responsives à la fenêtre =====
+    // Calcule width/height du panneau pour qu'il tienne toujours dans la
+    // fenêtre visible (sans jamais dépasser en haut/à gauche), en se
+    // rapprochant le plus possible de la taille "idéale" souhaitée.
+    // ════════════════════════════════════════════════════════════════
+    function fcrFitFabPanel(panel, rightOffset, bottomOffset, idealWidth, idealHeight) {
+        const margin = 12, minWidth = 300, minHeight = 360;
+        const availWidth  = window.innerWidth  - rightOffset  - margin;
+        const availHeight = window.innerHeight - bottomOffset - margin;
+        const width  = Math.max(minWidth,  Math.min(idealWidth,  availWidth));
+        const height = Math.max(minHeight, Math.min(idealHeight, availHeight));
+        panel.style.width  = width + 'px';
+        panel.style.height = height + 'px';
+        // Si même la largeur minimale ne rentre pas avec cet offset, on colle
+        // le panneau tout près du bord droit plutôt que de le laisser déborder.
+        panel.style.right = (rightOffset + width > window.innerWidth - 4)
+            ? '4px'
+            : rightOffset + 'px';
+    }
+
+    // ════════════════════════════════════════════════════════════════
     // ===== FAB EDIT ITEM (même style que le module Étiquettes) =====
     // ════════════════════════════════════════════════════════════════
     (function floatingEditItemBubble() {
@@ -5703,13 +5724,14 @@ body::after {
             panel.id = 'fcr-edititems-panel';
             panel.style.cssText = `
                 position:fixed; bottom:82px; right:140px; z-index:99989;
-                width:420px; height:620px; max-width:92vw; max-height:80vh;
                 border-radius:12px;
                 background:${v.panelBg}; border:1px solid ${v.borderColor};
                 box-shadow:0 8px 32px rgba(0,0,0,0.4);
                 font-family:Arial,sans-serif; font-size:13px;
                 display:none; flex-direction:column; overflow:hidden;
             `;
+            fcrFitFabPanel(panel, 140, 82, 420, 620);
+            window.addEventListener('resize', debounce(() => fcrFitFabPanel(panel, 140, 82, 420, 620), 150));
 
             const header = document.createElement('div');
             header.style.cssText = `
@@ -5849,13 +5871,14 @@ body::after {
             panel.id = 'fcr-moveitems-panel';
             panel.style.cssText = `
                 position:fixed; bottom:82px; right:200px; z-index:99989;
-                width:420px; height:620px; max-width:92vw; max-height:80vh;
                 border-radius:12px;
                 background:${v.panelBg}; border:1px solid ${v.borderColor};
                 box-shadow:0 8px 32px rgba(0,0,0,0.4);
                 font-family:Arial,sans-serif; font-size:13px;
                 display:none; flex-direction:column; overflow:hidden;
             `;
+            fcrFitFabPanel(panel, 200, 82, 420, 620);
+            window.addEventListener('resize', debounce(() => fcrFitFabPanel(panel, 200, 82, 420, 620), 150));
 
             const header = document.createElement('div');
             header.style.cssText = `
