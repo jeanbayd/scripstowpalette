@@ -1284,11 +1284,48 @@ body::after {
     top: -40px;
     left: 32%;
     width: 1px;
-    height: 30px;
-    background: linear-gradient(180deg, transparent, #7afcffaa, transparent);
+    height: 16px;
+    background: linear-gradient(180deg, transparent, #7afcff55, transparent);
     pointer-events: none;
     z-index: 9997;
+    opacity: 0.5;
     animation: fcr-neonbleu-rain 1.5s linear infinite;
+}
+html::before {
+    content: '';
+    position: fixed;
+    top: -40px;
+    left: 68%;
+    width: 1px;
+    height: 26px;
+    background: linear-gradient(180deg, transparent, #7afcff88, transparent);
+    pointer-events: none;
+    z-index: 9997;
+    opacity: 0.7;
+    animation: fcr-neonbleu-rain 1.9s linear infinite;
+    animation-delay: -0.6s;
+    box-shadow:
+        180px 260px 0 -0.4px #7afcff55,
+        -260px 480px 0 -0.4px #7afcff44,
+        420px 90px 0 -0.4px #7afcff50;
+}
+html::after {
+    content: '';
+    position: fixed;
+    top: -40px;
+    left: 14%;
+    width: 1px;
+    height: 22px;
+    background: linear-gradient(180deg, transparent, #7afcff66, transparent);
+    pointer-events: none;
+    z-index: 9997;
+    opacity: 0.6;
+    animation: fcr-neonbleu-rain 1.3s linear infinite;
+    animation-delay: -1.1s;
+    box-shadow:
+        -180px 340px 0 -0.4px #7afcff40,
+        300px 560px 0 -0.4px #7afcff38,
+        -420px 150px 0 -0.4px #7afcff45;
 }
 #fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel {
     animation: fcr-neonbleu-border 4s ease-in-out infinite !important;
