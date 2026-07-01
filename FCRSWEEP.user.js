@@ -3516,6 +3516,60 @@ body::after {
 
             // injectHazmatPanel_restyle is defined in global scope (called by applyTheme on theme change)
 
+            // ── Bandeau d'alerte hazmat (fixe en haut de la page) ──
+            function buildHazmatBanner(hazmatLevel, lastinMessage, lastinLevel) {
+                let banner = document.getElementById('hazmat-fcr-banner');
+                const refLevel = (lastinLevel !== '' && lastinLevel !== undefined) ? lastinLevel : hazmatLevel;
+                const levelNum = parseInt(refLevel);
+                const isDangerous = !isNaN(levelNum) && (levelNum === 0 || levelNum === 5 || levelNum === 6);
+
+                if (!isDangerous) {
+                    if (banner) banner.remove();
+                    return;
+                }
+
+                let bg, icon, label;
+                if (levelNum === 5) { bg = 'linear-gradient(90deg,#d35400,#f39c12)'; icon = '⚠️'; label = 'ATTENTION HAZMAT'; }
+                else                { bg = 'linear-gradient(90deg,#a93226,#e74c3c)'; icon = '🚫'; label = 'HAZMAT INTERDIT'; }
+
+                if (!banner) {
+                    banner = document.createElement('div');
+                    banner.id = 'hazmat-fcr-banner';
+                    banner.style.cssText = `
+                        position:fixed; top:0; left:0; right:0; z-index:999999;
+                        padding:10px 44px 10px 20px; font-family:Arial,sans-serif;
+                        color:#fff; font-weight:700; font-size:14px;
+                        display:flex; align-items:center; justify-content:center; gap:10px;
+                        box-shadow:0 2px 10px rgba(0,0,0,0.45);
+                        text-align:center; letter-spacing:0.3px; cursor:pointer;
+                        animation:hazmatBannerPulse 1.6s ease-in-out infinite;
+                    `;
+                    if (!document.getElementById('hazmat-fcr-banner-style')) {
+                        const style = document.createElement('style');
+                        style.id = 'hazmat-fcr-banner-style';
+                        style.textContent = `@keyframes hazmatBannerPulse { 0%,100% { filter:brightness(1); } 50% { filter:brightness(1.15); } }`;
+                        document.head.appendChild(style);
+                    }
+                    banner.addEventListener('click', (e) => {
+                        if (e.target.id === 'hazmat-fcr-banner-close') return;
+                        const panel = document.getElementById('hazmat-fcr-panel');
+                        if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    });
+                    document.body.appendChild(banner);
+                }
+
+                banner.style.background = bg;
+                banner.innerHTML = `
+                    <span style="font-size:18px;">${icon}</span>
+                    <span>${label} — Niveau ${refLevel}${lastinMessage ? ' · ' + lastinMessage : ''}</span>
+                    <span id="hazmat-fcr-banner-close" title="Fermer" style="position:absolute; right:14px; cursor:pointer; font-size:16px; opacity:0.85;">✕</span>
+                `;
+                banner.querySelector('#hazmat-fcr-banner-close').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    banner.remove();
+                });
+            }
+
             function buildHazmatPanel(anchorRow, asin, hazmatLevel, lastinMessage, lastinLevel, pcApproved) {
                 let existing = document.getElementById('hazmat-fcr-panel');
                 if (existing) existing.remove();
@@ -3612,6 +3666,9 @@ body::after {
                 if (anchorRow && anchorRow.parentNode) {
                     anchorRow.parentNode.insertBefore(wrapperRow, anchorRow.nextSibling);
                 }
+
+                if (isLoading) buildHazmatBanner('', '', '');
+                else buildHazmatBanner(hazmatLevel, lastinMessage, lastinLevel);
             }
 
             function fetchHazmatLevel(asin, fc) {
@@ -3839,7 +3896,7 @@ body::after {
             fab.id = 'fcr-problem-fab';
             fab.title = 'Problems résumé';
             fab.style.cssText = `
-                position:fixed; bottom:24px; right:200px; z-index:99990;
+                position:fixed; bottom:24px; right:260px; z-index:99990;
                 width:48px; height:48px; border-radius:50%;
                 background:${isDark ? (t.isGradient ? t.gradBtn : t.bg3) : '#cc0000'};
                 color:${accentColor}; font-size:20px;
@@ -3872,7 +3929,7 @@ body::after {
             const panel = document.createElement('div');
             panel.id = 'fcr-problem-panel';
             panel.style.cssText = `
-                position:fixed; bottom:82px; right:200px; z-index:99989;
+                position:fixed; bottom:82px; right:260px; z-index:99989;
                 width:440px; border-radius:12px;
                 background:${panelBg}; border:1px solid ${borderColor};
                 box-shadow:0 8px 32px rgba(0,0,0,0.4);
@@ -3990,6 +4047,12 @@ body::after {
 
             fab.addEventListener('click', togglePanel);
             panel.querySelector('#fcr-problem-close').addEventListener('click', togglePanel);
+            header.style.cursor = 'pointer';
+            header.title = 'Cliquer pour fermer';
+            header.addEventListener('click', (e) => {
+                if (e.target.closest('#fcr-problem-close, #fcr-problem-refresh')) return;
+                togglePanel();
+            });
 
             // Rafraîchir
             panel.querySelector('#fcr-problem-refresh').addEventListener('click', () => {
@@ -4356,6 +4419,12 @@ body::after {
             <span id="etiq2-close" style="cursor:pointer;color:${v.accentColor};font-size:16px;font-weight:700;line-height:1;" title="Fermer">✕</span>
         `;
         header.querySelector('#etiq2-close').addEventListener('click', etiq2_toggle);
+        header.style.cursor = 'pointer';
+        header.title = 'Cliquer pour fermer';
+        header.addEventListener('click', (e) => {
+            if (e.target.closest('#etiq2-close')) return;
+            etiq2_toggle();
+        });
         panel.appendChild(header);
 
         const body = document.createElement('div');
@@ -5419,6 +5488,12 @@ body::after {
             header.querySelector('#fcr-edititems-close').addEventListener('click', toggle);
             header.querySelector('#fcr-edititems-reload').addEventListener('click', load);
             header.querySelector('#fcr-edititems-popout').addEventListener('click', openInWindow);
+            header.style.cursor = 'pointer';
+            header.title = 'Cliquer pour fermer';
+            header.addEventListener('click', (e) => {
+                if (e.target.closest('#fcr-edititems-close, #fcr-edititems-reload, #fcr-edititems-popout')) return;
+                toggle();
+            });
 
             window.fcrEditItemsToggle = toggle;
         }
@@ -5559,6 +5634,12 @@ body::after {
             header.querySelector('#fcr-moveitems-close').addEventListener('click', toggle);
             header.querySelector('#fcr-moveitems-reload').addEventListener('click', load);
             header.querySelector('#fcr-moveitems-popout').addEventListener('click', openInWindow);
+            header.style.cursor = 'pointer';
+            header.title = 'Cliquer pour fermer';
+            header.addEventListener('click', (e) => {
+                if (e.target.closest('#fcr-moveitems-close, #fcr-moveitems-reload, #fcr-moveitems-popout')) return;
+                toggle();
+            });
 
             window.fcrMoveItemsToggle = toggle;
         }
