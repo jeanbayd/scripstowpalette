@@ -11,6 +11,7 @@
 // @match        https://qi-fcresearch-eu.corp.amazon.com/ETZ2*
 // @match        https://fcresearch-eu.aka.amazon.com/*/results?s=*
 // @match        https://*.aka.amazon.com/app/edititems*
+// @match        https://*.aka.amazon.com/app/moveitems*
 // @match        https://aft-poirot-website-dub.dub.proxy.amazon.com/?tool=V3
 // @grant        GM_addStyle
 // @grant        GM_openInTab
@@ -162,6 +163,8 @@
     // Détection globale page EditItemsApp — utilisée pour adapter le thème (lisibilité)
     // sans jamais toucher au rendu de FC Research.
     const FCR_IS_EDITITEMS_PAGE = window.location.pathname.startsWith('/app/edititems');
+    // Détection globale page MoveItemsApp — même traitement que EditItemsApp (lisibilité).
+    const FCR_IS_MOVEITEMS_PAGE = window.location.pathname.startsWith('/app/moveitems');
 
     // ════════════════════════════════════════════════════════════════
     // ===== UTILITAIRES =====
@@ -1609,8 +1612,8 @@ body::after {
         }
         ` : ''}
         ${t.isAnimated && t.animCSS ? t.animCSS : ''}
-        ${FCR_IS_EDITITEMS_PAGE ? `
-        /* EditItemsApp uniquement : enlève la transparence des zones de saisie et boutons cliquables */
+        ${(FCR_IS_EDITITEMS_PAGE || FCR_IS_MOVEITEMS_PAGE) ? `
+        /* EditItemsApp / MoveItemsApp uniquement : enlève la transparence des zones de saisie et boutons cliquables */
         input, select, textarea, button, [role="button"],
         [class*="button" i], [class*="btn" i], [class*="clickable" i],
         div[onclick], div[tabindex], a[role], [aria-pressed], [aria-selected] {
@@ -5418,6 +5421,146 @@ body::after {
             header.querySelector('#fcr-edititems-popout').addEventListener('click', openInWindow);
 
             window.fcrEditItemsToggle = toggle;
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', buildFab);
+        } else {
+            setTimeout(buildFab, 1000);
+        }
+
+    })();
+
+    // ════════════════════════════════════════════════════════════════
+    // ===== FAB MOVE ITEM (même style que le module Edit Item) =====
+    // ════════════════════════════════════════════════════════════════
+    (function floatingMoveItemBubble() {
+
+        const MOVE_ITEMS_PATH = '/app/moveitems';
+        const isMoveItemsPage = window.location.pathname.startsWith(MOVE_ITEMS_PATH);
+        if (isMoveItemsPage) return; // pas besoin du FAB sur Move Item lui-même
+
+        function buildMoveItemsBaseURL() {
+            // Domaine fixe de l'app Move Item (identique à Edit Item).
+            return 'https://aft-qt-eu.aka.amazon.com' + MOVE_ITEMS_PATH + '?experience=Desktop';
+        }
+
+        function openInWindow() {
+            const url = buildMoveItemsBaseURL();
+            const w = 460, h = 700;
+            const left = (window.screen.width - w) - 40;
+            const top = (window.screen.height - h) - 80;
+            const win = window.open(
+                url, 'fcrMoveItemPopup',
+                `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes,toolbar=no,menubar=no,location=no,status=no`
+            );
+            if (win) win.focus();
+            else alert('Le navigateur a bloqué l\'ouverture de la fenêtre Move Item. Autorise les popups pour ce site puis réessaie.');
+        }
+
+        function buildFab() {
+            if (document.getElementById('fcr-moveitems-fab')) return;
+
+            const t = THEMES[currentTheme] || THEMES.bleu;
+            const v = etiq2_getThemeVars(t);
+
+            // ── FAB ──────────────────────────────────────────────────
+            const fab = document.createElement('div');
+            fab.id = 'fcr-moveitems-fab';
+            fab.title = 'Move Item';
+            fab.innerHTML = '📦';
+            fab.style.cssText = `
+                position:fixed; bottom:24px; right:200px; z-index:99990;
+                width:48px; height:48px; border-radius:50%;
+                background:${v.isDark ? (t.isGradient ? t.gradBtn : t.bg3) : '#ff9900'};
+                color:${v.accentColor}; font-size:22px;
+                display:flex; align-items:center; justify-content:center;
+                cursor:pointer; box-shadow:0 4px 16px rgba(0,0,0,0.35);
+                border:2px solid ${v.accentColor};
+                transition:transform 0.2s, box-shadow 0.2s;
+                user-select:none;
+            `;
+            fab.addEventListener('mouseenter', () => { fab.style.transform = 'scale(1.12)'; });
+            fab.addEventListener('mouseleave', () => { fab.style.transform = 'scale(1)'; });
+            fab.addEventListener('click', toggle);
+            document.body.appendChild(fab);
+
+            // ── Panneau ──────────────────────────────────────────────
+            const panel = document.createElement('div');
+            panel.id = 'fcr-moveitems-panel';
+            panel.style.cssText = `
+                position:fixed; bottom:82px; right:200px; z-index:99989;
+                width:420px; height:620px; max-width:92vw; max-height:80vh;
+                border-radius:12px;
+                background:${v.panelBg}; border:1px solid ${v.borderColor};
+                box-shadow:0 8px 32px rgba(0,0,0,0.4);
+                font-family:Arial,sans-serif; font-size:13px;
+                display:none; flex-direction:column; overflow:hidden;
+            `;
+
+            const header = document.createElement('div');
+            header.style.cssText = `
+                background:${v.headerBg}; padding:10px 14px;
+                display:flex; align-items:center; justify-content:space-between;
+                border-bottom:1px solid ${v.borderColor}; flex-shrink:0;
+            `;
+            header.innerHTML = `
+                <span style="font-size:11px;font-weight:700;color:${v.accentColor};text-transform:uppercase;letter-spacing:0.5px;">📦 MOVE ITEM</span>
+                <span style="display:flex;gap:10px;align-items:center;">
+                    <span id="fcr-moveitems-popout" title="Ouvrir dans une fenêtre" style="cursor:pointer;color:${v.accentColor};font-size:14px;">⤢</span>
+                    <span id="fcr-moveitems-reload" title="Recharger" style="cursor:pointer;color:${v.accentColor};font-size:14px;">⟳</span>
+                    <span id="fcr-moveitems-close" title="Fermer" style="cursor:pointer;color:${v.accentColor};font-size:16px;font-weight:700;line-height:1;">✕</span>
+                </span>
+            `;
+            panel.appendChild(header);
+
+            const body = document.createElement('div');
+            body.style.cssText = 'position:relative; flex:1; background:#fff;';
+            const loading = document.createElement('div');
+            loading.id = 'fcr-moveitems-loading';
+            loading.style.cssText = 'position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#555; font-size:13px; text-align:center; padding:16px;';
+            loading.textContent = '⏳ Chargement de Move Item…';
+            const iframe = document.createElement('iframe');
+            iframe.id = 'fcr-moveitems-iframe';
+            iframe.style.cssText = 'width:100%; height:100%; border:none; display:block;';
+            body.appendChild(loading);
+            body.appendChild(iframe);
+            panel.appendChild(body);
+
+            document.body.appendChild(panel);
+
+            let fallbackTimer = null;
+            function load() {
+                loading.style.display = 'flex';
+                loading.textContent = '⏳ Chargement de Move Item…';
+                iframe.src = buildMoveItemsBaseURL();
+                clearTimeout(fallbackTimer);
+                fallbackTimer = setTimeout(() => {
+                    loading.innerHTML = '⚠️ Affichage intégré bloqué par le site.<br><br>Utilise le bouton ⤢ ci-dessus pour ouvrir Move Item dans une fenêtre.';
+                }, 4000);
+            }
+            iframe.addEventListener('load', () => {
+                // Le 'load' se déclenche même si le contenu est bloqué (X-Frame-Options) ;
+                // on masque le message de chargement mais le fallback texte reste si rien ne s'affiche après le délai.
+                clearTimeout(fallbackTimer);
+                loading.style.display = 'none';
+            });
+
+            function toggle() {
+                const visible = panel.style.display !== 'none';
+                if (visible) {
+                    panel.style.display = 'none';
+                } else {
+                    panel.style.display = 'flex';
+                    if (!iframe.src) load();
+                }
+            }
+
+            header.querySelector('#fcr-moveitems-close').addEventListener('click', toggle);
+            header.querySelector('#fcr-moveitems-reload').addEventListener('click', load);
+            header.querySelector('#fcr-moveitems-popout').addEventListener('click', openInWindow);
+
+            window.fcrMoveItemsToggle = toggle;
         }
 
         if (document.readyState === 'loading') {
