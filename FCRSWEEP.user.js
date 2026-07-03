@@ -3618,6 +3618,84 @@ body::after {
     }
 
     // ════════════════════════════════════════════════════════════════
+    // ===== CACHE PARTAGÉ HAZMAT (anti double-recherche) =====
+    // Un seul cache — et une seule requête en vol — par couple FC+ASIN,
+    // partagé entre le panel "produit" (fiche ASIN) et le scan "inventaire",
+    // pour ne jamais interroger PanDash deux fois pour le même ASIN.
+    // ════════════════════════════════════════════════════════════════
+    const hazmatDataCache = {};        // cacheKey -> { level, message, pcApproved }
+    const hazmatPendingCallbacks = {}; // cacheKey -> [callback, ...] (requête déjà en vol)
+
+    // ASIN/niveau actuellement affiché par le bandeau "produit" (fiche ASIN unique).
+    // Sert à ne pas ré-afficher le même ASIN dans le bandeau "inventaire" (anti doublon visuel).
+    let fcrActiveProductHazmat = null; // { asin, level } | null
+
+    function getHazmatFullData(asin, fc, callback) {
+        const cacheKey = fc + '_' + asin;
+        if (hazmatDataCache[cacheKey] !== undefined) { callback(hazmatDataCache[cacheKey]); return; }
+        if (hazmatPendingCallbacks[cacheKey]) { hazmatPendingCallbacks[cacheKey].push(callback); return; }
+        hazmatPendingCallbacks[cacheKey] = [callback];
+
+        function resolveAll(result) {
+            hazmatDataCache[cacheKey] = result;
+            const cbs = hazmatPendingCallbacks[cacheKey] || [];
+            delete hazmatPendingCallbacks[cacheKey];
+            cbs.forEach(cb => { try { cb(result); } catch (e) {} });
+        }
+
+        function queryLevel(hazlvl) {
+            const a = new Date();
+            const filename = `${fc}_${asin}_${a.getFullYear()}${a.getMonth()+1}${a.getDate()}${a.getHours()}${a.getMinutes()}${a.getSeconds()}`;
+            GM_xmlhttpRequest({
+                method: "POST",
+                withCredentials: true,
+                url: "https://pandash.amazon.com/GridServlet",
+                responseType: "json",
+                data: `language=default&source=${hazlvl}-hazmat-FC&marketPlaces=${HAZMAT_MARKETPLACE}&asins=${asin}&sidx=product.asin&rows=99999&page=1&sord=desc&isExportOnly=FALSE&fileName=${filename}&fc=${fc}&pandashservice=`,
+                headers: {
+                    Host: "pandash.amazon.com",
+                    Accept: "application/json, text/javascript, */*; q=0.01",
+                    "Accept-Language": "en-US,en;q=0.5",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                    "X-Requested-With": "XMLHttpRequest",
+                    Origin: "https://pandash.amazon.com",
+                    Connection: "keep-alive",
+                    Referer: "https://pandash.amazon.com/",
+                    "Sec-Fetch-Dest": "empty", "Sec-Fetch-Mode": "cors", "Sec-Fetch-Site": "same-origin",
+                },
+                onload: function(response) {
+                    let result = { level: null, message: '', pcApproved: '' };
+                    if (response.response && response.response.rows && response.response.rows.length > 0) {
+                        const data = response.response.rows[0];
+                        result = { level: data.level || data.htrc || null, message: data.message || '', pcApproved: data.pcApproved || '' };
+                    }
+                    resolveAll(result);
+                },
+                onerror: function() { resolveAll({ level: null, message: '', pcApproved: '' }); }
+            });
+        }
+
+        let hazlvl = GM_getValue(fc + "hazlvl", false);
+        if (!hazlvl) {
+            GM_xmlhttpRequest({
+                method: "GET",
+                withCredentials: true,
+                url: `https://pandash.amazon.com/GridServlet?fc=${fc}`,
+                responseType: "json",
+                onload: function(e) {
+                    hazlvl = e.response.restriction;
+                    GM_setValue(fc + "hazlvl", hazlvl);
+                    queryLevel(hazlvl);
+                },
+                onerror: function() { resolveAll({ level: null, message: '', pcApproved: '' }); }
+            });
+        } else {
+            queryLevel(hazlvl);
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
     // ===== HAZMAT LEVEL DISPLAY =====
     // Moved: now injects AFTER "Max units for tsCage" row
     // ════════════════════════════════════════════════════════════════
@@ -3685,8 +3763,20 @@ body::after {
 
                 if (!isDangerous) {
                     if (banner) { banner.remove(); fcrReflowHazmatBanners(); }
+                    // Cet ASIN n'est plus signalé par le bandeau produit : on peut relâcher
+                    // la déduplication vis-à-vis du bandeau inventaire pour cet ASIN.
+                    if (fcrActiveProductHazmat && fcrActiveProductHazmat.asin === asin) {
+                        fcrActiveProductHazmat = null;
+                        if (typeof renderInventoryHazmatBanner === 'function') renderInventoryHazmatBanner();
+                    }
                     return;
                 }
+
+                // Mémorise l'ASIN/niveau affiché ici pour que le bandeau "inventaire"
+                // ne réaffiche pas la même alerte (anti double-bandeau), puis rafraîchit
+                // immédiatement le bandeau inventaire s'il était déjà affiché.
+                fcrActiveProductHazmat = { asin, level: refLevel };
+                if (typeof renderInventoryHazmatBanner === 'function') renderInventoryHazmatBanner();
 
                 let bg, icon, label;
                 if (levelNum === 5) { bg = 'linear-gradient(90deg,#a85c0c,#e08e0f)'; icon = '⚠️'; label = 'ATTENTION HAZMAT'; }
@@ -3846,60 +3936,19 @@ body::after {
                 if (!anchorRow) return;
                 buildHazmatPanel(anchorRow, asin, 'Chargement...', '', '', '');
 
-                let hazlvl = GM_getValue(fc + "hazlvl", false);
-                if (!hazlvl) {
-                    GM_xmlhttpRequest({
-                        method: "GET",
-                        withCredentials: true,
-                        url: `https://pandash.amazon.com/GridServlet?fc=${fc}`,
-                        responseType: "json",
-                        onload: function(e) {
-                            hazlvl = e.response.restriction;
-                            GM_setValue(fc + "hazlvl", hazlvl);
-                            fetchPanDashData(asin, fc, hazlvl, anchorRow);
-                        },
-                        onerror: function() { buildHazmatPanel(anchorRow, asin, 'Erreur de chargement', '', '', ''); }
-                    });
-                } else {
-                    fetchPanDashData(asin, fc, hazlvl, anchorRow);
-                }
-            }
-
-            function fetchPanDashData(asin, fc, hazlvl, anchorRow) {
-                const a = new Date();
-                const filename = `${fc}_${asin}_${a.getFullYear()}${a.getMonth()+1}${a.getDate()}${a.getHours()}${a.getMinutes()}${a.getSeconds()}`;
-                GM_xmlhttpRequest({
-                    method: "POST",
-                        withCredentials: true,
-                    url: "https://pandash.amazon.com/GridServlet",
-                    responseType: "json",
-                    data: `language=default&source=${hazlvl}-hazmat-FC&marketPlaces=${HAZMAT_MARKETPLACE}&asins=${asin}&sidx=product.asin&rows=99999&page=1&sord=desc&isExportOnly=FALSE&fileName=${filename}&fc=${fc}&pandashservice=`,
-                    headers: {
-                        Host: "pandash.amazon.com",
-                        Accept: "application/json, text/javascript, */*; q=0.01",
-                        "Accept-Language": "en-US,en;q=0.5",
-                        "Accept-Encoding": "gzip, deflate, br",
-                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                        "X-Requested-With": "XMLHttpRequest",
-                        Origin: "https://pandash.amazon.com",
-                        Connection: "keep-alive",
-                        Referer: "https://pandash.amazon.com/",
-                        "Sec-Fetch-Dest": "empty", "Sec-Fetch-Mode": "cors", "Sec-Fetch-Site": "same-origin",
-                    },
-                    onload: function(response) {
-                        if (response.response && response.response.rows && response.response.rows.length > 0) {
-                            const data = response.response.rows[0];
-                            // On utilise "Last In" (data.level) comme chiffre principal affiché
-                            const lastinLevel = data.level || data.htrc || 'Non trouvé';
-                            const hazmatLevel = lastinLevel; // badge + couleurs basés sur Last In
-                            const lastinMessage = data.message || '';
-                            const pcApproved = data.pcApproved || '';
-                            buildHazmatPanel(anchorRow, asin, hazmatLevel, lastinMessage, lastinLevel, pcApproved);
-                        } else {
-                            buildHazmatPanel(anchorRow, asin, 'Non trouvé', '', '', '');
-                        }
-                    },
-                    onerror: function() { buildHazmatPanel(anchorRow, asin, 'Erreur de chargement', '', '', ''); }
+                // Utilise le cache/dedupe partagé : si cet ASIN a déjà été interrogé
+                // (ex: par le scan inventaire), aucune nouvelle requête PanDash n'est lancée.
+                getHazmatFullData(asin, fc, function(result) {
+                    if (!result || result.level === null || result.level === undefined) {
+                        buildHazmatPanel(anchorRow, asin, 'Non trouvé', '', '', '');
+                        return;
+                    }
+                    // On utilise "Last In" (result.level) comme chiffre principal affiché
+                    const lastinLevel = result.level;
+                    const hazmatLevel = lastinLevel; // badge + couleurs basés sur Last In
+                    const lastinMessage = result.message || '';
+                    const pcApproved = result.pcApproved || '';
+                    buildHazmatPanel(anchorRow, asin, hazmatLevel, lastinMessage, lastinLevel, pcApproved);
                 });
             }
 
@@ -3944,68 +3993,11 @@ body::after {
     // en hazmat interdit (niveau 0 ou 6 — même seuil que le bandeau produit).
     // Requêtes limitées en parallèle (4 à la fois) pour ménager pandash.
     // ════════════════════════════════════════════════════════════════
-    const hazmatLevelCache = {};
-
+    // Le cache/dedupe est désormais partagé avec le panel produit via getHazmatFullData()
+    // (voir plus haut) — un même ASIN n'est donc jamais interrogé deux fois sur PanDash,
+    // que ce soit depuis la fiche produit ou depuis le scan inventaire.
     function fetchAsinHazmatLevel(asin, fc, callback) {
-        const cacheKey = fc + '_' + asin;
-        if (hazmatLevelCache[cacheKey] !== undefined) { callback(hazmatLevelCache[cacheKey]); return; }
-
-        function queryLevel(hazlvl) {
-            const a = new Date();
-            const filename = `${fc}_${asin}_${a.getFullYear()}${a.getMonth()+1}${a.getDate()}${a.getHours()}${a.getMinutes()}${a.getSeconds()}`;
-            GM_xmlhttpRequest({
-                method: "POST",
-                withCredentials: true,
-                url: "https://pandash.amazon.com/GridServlet",
-                responseType: "json",
-                data: `language=default&source=${hazlvl}-hazmat-FC&marketPlaces=${HAZMAT_MARKETPLACE}&asins=${asin}&sidx=product.asin&rows=99999&page=1&sord=desc&isExportOnly=FALSE&fileName=${filename}&fc=${fc}&pandashservice=`,
-                headers: {
-                    Host: "pandash.amazon.com",
-                    Accept: "application/json, text/javascript, */*; q=0.01",
-                    "Accept-Language": "en-US,en;q=0.5",
-                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                    "X-Requested-With": "XMLHttpRequest",
-                    Origin: "https://pandash.amazon.com",
-                    Referer: "https://pandash.amazon.com/",
-                },
-                onload: function(response) {
-                    let result = { level: null, message: '' };
-                    if (response.response && response.response.rows && response.response.rows.length > 0) {
-                        const data = response.response.rows[0];
-                        result = { level: data.level || data.htrc || null, message: data.message || '' };
-                    }
-                    hazmatLevelCache[cacheKey] = result;
-                    callback(result);
-                },
-                onerror: function() {
-                    const result = { level: null, message: '' };
-                    hazmatLevelCache[cacheKey] = result;
-                    callback(result);
-                }
-            });
-        }
-
-        let hazlvl = GM_getValue(fc + "hazlvl", false);
-        if (!hazlvl) {
-            GM_xmlhttpRequest({
-                method: "GET",
-                withCredentials: true,
-                url: `https://pandash.amazon.com/GridServlet?fc=${fc}`,
-                responseType: "json",
-                onload: function(e) {
-                    hazlvl = e.response.restriction;
-                    GM_setValue(fc + "hazlvl", hazlvl);
-                    queryLevel(hazlvl);
-                },
-                onerror: function() {
-                    const result = { level: null, message: '' };
-                    hazmatLevelCache[cacheKey] = result;
-                    callback(result);
-                }
-            });
-        } else {
-            queryLevel(hazlvl);
-        }
+        getHazmatFullData(asin, fc, callback);
     }
 
     // Exécute `worker` sur chaque item de `items` avec au maximum `limit` requêtes en parallèle.
@@ -4020,7 +4012,8 @@ body::after {
         await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next));
     }
 
-    function showInventoryHazmatBanner(forbiddenAsins) {
+    // `forbiddenEntries` est un tableau d'objets { asin, level }.
+    function showInventoryHazmatBanner(forbiddenEntries) {
         let banner = document.getElementById('hazmat-inventory-fcr-banner');
         if (!banner) {
             banner = document.createElement('div');
@@ -4048,12 +4041,15 @@ body::after {
             });
             document.body.appendChild(banner);
         }
-        const list = forbiddenAsins.slice(0, 5).join(', ') + (forbiddenAsins.length > 5 ? '…' : '');
+        // Chaque ASIN affiché avec son niveau hazmat, ex: "B0GJ91LZLF (Niv. 0)"
+        const list = forbiddenEntries.slice(0, 5)
+            .map(e => `${e.asin}${(e.level !== null && e.level !== undefined && e.level !== '') ? ` (Niv.&nbsp;${e.level})` : ''}`)
+            .join(', ') + (forbiddenEntries.length > 5 ? '…' : '');
         banner.innerHTML = `
             <div style="display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;max-width:1100px;margin:0 auto;">
                 <span style="font-size:18px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));">🚫</span>
                 <span style="font-weight:800;letter-spacing:0.4px;">HAZMAT INTERDIT DANS L'INVENTAIRE</span>
-                <span style="background:rgba(0,0,0,0.28);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;">${forbiddenAsins.length} ASIN</span>
+                <span style="background:rgba(0,0,0,0.28);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;">${forbiddenEntries.length} ASIN</span>
                 <span style="font-size:11px;font-weight:500;opacity:0.92;">${list}</span>
             </div>
             <span id="hazmat-inventory-fcr-banner-close" title="Fermer" style="position:absolute; right:12px; top:50%; transform:translateY(-50%); cursor:pointer; font-size:13px; width:20px; height:20px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:rgba(0,0,0,0.22); opacity:0.9;">✕</span>
@@ -4069,6 +4065,21 @@ body::after {
     function removeInventoryHazmatBanner() {
         const banner = document.getElementById('hazmat-inventory-fcr-banner');
         if (banner) { banner.remove(); fcrReflowHazmatBanners(); }
+    }
+
+    // Dernier résultat du scan inventaire (tableau d'objets { asin, level }),
+    // conservé pour pouvoir ré-appliquer le filtre anti-doublon dès que le
+    // bandeau produit apparaît/disparaît, sans relancer de recherche.
+    let lastInventoryForbidden = [];
+
+    // Affiche le bandeau inventaire en excluant l'ASIN déjà couvert par le
+    // bandeau "produit" (fiche ASIN unique) — évite le double bandeau pour
+    // la même alerte quand on est sur la fiche de l'ASIN en question.
+    function renderInventoryHazmatBanner() {
+        const activeAsin = fcrActiveProductHazmat ? fcrActiveProductHazmat.asin : null;
+        const toShow = activeAsin ? lastInventoryForbidden.filter(e => e.asin !== activeAsin) : lastInventoryForbidden;
+        if (toShow.length > 0) showInventoryHazmatBanner(toShow);
+        else removeInventoryHazmatBanner();
     }
 
     function addInventoryHazmatIndicator() {
@@ -4104,6 +4115,9 @@ body::after {
                 const asin = asinCell ? asinCell.innerText.trim() : '';
                 if (asin) asinSet.add(asin);
             });
+            // On ne garde que les ASIN pas encore en cache pour l'affichage "vérification…",
+            // mais on interroge quand même fetchAsinHazmatLevel pour tous : le cache partagé
+            // (getHazmatFullData) renvoie instantanément les ASIN déjà connus, sans requête réseau.
             const asins = Array.from(asinSet);
 
             if (asins.length === 0) {
@@ -4116,22 +4130,26 @@ body::after {
                 fetchAsinHazmatLevel(asin, fc, (result) => {
                     const levelNum = parseInt(result && result.level);
                     if (!isNaN(levelNum)) {
-                        if (levelNum === 0 || levelNum === 6) forbidden.push(asin);
-                        else if (levelNum === 5) warning.push(asin);
+                        if (levelNum === 0 || levelNum === 6) forbidden.push({ asin, level: result.level });
+                        else if (levelNum === 5) warning.push({ asin, level: result.level });
                     }
                     resolve();
                 });
             }));
 
+            lastInventoryForbidden = forbidden;
+
             if (forbidden.length > 0) {
+                const asinList = forbidden.map(e => e.asin);
                 chip.textContent = `🚫 ${forbidden.length} HAZMAT INTERDIT !`;
                 chip.style.color = '#ff4d4d';
-                chip.title = `ASIN interdit(s) détecté(s) dans l'inventaire : ${forbidden.join(', ')}`;
-                showInventoryHazmatBanner(forbidden);
+                chip.title = `ASIN interdit(s) détecté(s) dans l'inventaire : ${forbidden.map(e => `${e.asin} (Niv. ${e.level})`).join(', ')}`;
+                renderInventoryHazmatBanner();
             } else if (warning.length > 0) {
+                const asinList = warning.map(e => e.asin);
                 chip.textContent = `⚠️ ${warning.length} Hazmat niveau 5`;
                 chip.style.color = '#f39c12';
-                chip.title = `ASIN à surveiller (niveau 5) : ${warning.join(', ')}`;
+                chip.title = `ASIN à surveiller (niveau 5) : ${asinList.join(', ')}`;
                 removeInventoryHazmatBanner();
             } else {
                 chip.textContent = '✅ Hazmat OK';
