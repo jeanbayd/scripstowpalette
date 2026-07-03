@@ -166,6 +166,17 @@
     // Détection globale page MoveItemsApp — même traitement que EditItemsApp (lisibilité).
     const FCR_IS_MOVEITEMS_PAGE = window.location.pathname.startsWith('/app/moveitems');
 
+    // Recherche contenant (?s=tsX17kw7csr…) vs recherche ASIN (?s=B0xxxxx, X0xxxxxx, Zzxxxxxx…)
+    // Utilisé pour n'activer certaines fonctionnalités (impression stock) que sur les
+    // pages de résultats de recherche par contenant.
+    function getSearchParamS() {
+        try { return new URLSearchParams(window.location.search).get('s') || ''; }
+        catch (e) { return ''; }
+    }
+    function isContainerSearchPage() {
+        return /^ts/i.test(getSearchParamS());
+    }
+
     // ════════════════════════════════════════════════════════════════
     // ===== UTILITAIRES =====
     // ════════════════════════════════════════════════════════════════
@@ -1380,7 +1391,7 @@ body::after {
         if (t.isBase) {
             styleEl.textContent = `
             #fcr-theme-panel { background:#f0f0f0; border-bottom:2px solid #ccc; overflow:hidden; }
-            #fcr-theme-header { display:flex; align-items:center; justify-content:space-between; padding:7px 10px; cursor:pointer; border-bottom:1px solid #ccc; user-select:none; }
+            #fcr-theme-header { display:flex; align-items:center; justify-content:space-between; padding:7px 10px; cursor:pointer; border-bottom:1px solid #ccc; user-select:none; transition:background 0.2s; }
             #fcr-theme-header:hover { background:#e0e0e0; }
             #fcr-theme-label { color:#333; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; }
             #fcr-theme-arrow { color:#333; font-size:9px; font-weight:700; }
@@ -1503,8 +1514,10 @@ body::after {
         .prep-instructions-row td.prep-noprep { color: ${t.prepNoPrep} !important; font-weight:bold; }
         .prep-instructions-row td.prep-yes  { color: ${t.prepYes} !important; font-weight:bold; }
         #fcr-theme-panel { border-bottom:2px solid ${t.accentDark}; background:${panelBg}; overflow:hidden; }
-        #fcr-theme-header { display:flex; align-items:center; justify-content:space-between; padding:7px 10px; border-bottom:1px solid ${t.accentDark}; user-select:none; }
+        #fcr-theme-header { display:flex; align-items:center; justify-content:space-between; padding:7px 10px; border-bottom:1px solid ${t.accentDark}; user-select:none; cursor:pointer; transition:background 0.2s; }
+        #fcr-theme-header:hover { background:${t.bg3}; }
         #fcr-theme-label { color:${t.accent}; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; }
+        #fcr-theme-arrow { color:${t.accent}; font-size:9px; font-weight:700; }
         .fcr-theme-section-header { display:flex; align-items:center; justify-content:space-between; padding:5px 10px; cursor:pointer; border-bottom:1px solid ${t.accentDark}44; user-select:none; transition:background 0.2s; }
         .fcr-theme-section-header:hover { background:${t.bg3}; }
         .fcr-theme-section-header span:first-child { color:${t.accent}; font-size:10px; font-weight:700; opacity:0.8; }
@@ -1805,6 +1818,7 @@ body::after {
         const sidebar = document.querySelector('#side-bar') || document.querySelector('.sidebar') || document.querySelector('[id*="side"]');
         if (!sidebar || document.getElementById('fcr-theme-panel')) return;
 
+        const isMasterOpen  = GM_getValue('themePanelMasterOpen', true);
         const isStaticOpen  = GM_getValue('themePanelStaticOpen', true);
         const isAnimOpen    = GM_getValue('themePanelAnimOpen', true);
 
@@ -1815,32 +1829,45 @@ body::after {
         panel.id = 'fcr-theme-panel';
 
         panel.innerHTML = `
-            <div id="fcr-theme-header">
+            <div id="fcr-theme-header" style="cursor:pointer;">
                 <span id="fcr-theme-label">🎨 THÈME COULEUR</span>
+                <span id="fcr-theme-arrow">${isMasterOpen ? '▲' : '▼'}</span>
             </div>
-            <div id="fcr-theme-static-section">
-                <div id="fcr-theme-static-header" class="fcr-theme-section-header">
-                    <span>⬛ Statiques</span>
-                    <span id="fcr-theme-static-arrow">${isStaticOpen ? '▲' : '▼'}</span>
+            <div id="fcr-theme-content" style="display:${isMasterOpen ? 'block' : 'none'};">
+                <div id="fcr-theme-static-section">
+                    <div id="fcr-theme-static-header" class="fcr-theme-section-header">
+                        <span>⬛ Statiques</span>
+                        <span id="fcr-theme-static-arrow">${isStaticOpen ? '▲' : '▼'}</span>
+                    </div>
+                    <div id="fcr-theme-static-body" style="display:${isStaticOpen ? 'block' : 'none'}; padding:5px 8px 6px 8px;">
+                        ${staticKeys.map(k => `<span class="fcr-theme-btn${currentTheme===k?' active':''}" id="fcr-theme-btn-${k}" data-theme="${k}">${THEMES[k].label}</span>`).join('\n                        ')}
+                    </div>
                 </div>
-                <div id="fcr-theme-static-body" style="display:${isStaticOpen ? 'block' : 'none'}; padding:5px 8px 6px 8px;">
-                    ${staticKeys.map(k => `<span class="fcr-theme-btn${currentTheme===k?' active':''}" id="fcr-theme-btn-${k}" data-theme="${k}">${THEMES[k].label}</span>`).join('\n                    ')}
-                </div>
-            </div>
-            <div id="fcr-theme-anim-section">
-                <div id="fcr-theme-anim-header" class="fcr-theme-section-header">
-                    <span>✨ Animés</span>
-                    <span id="fcr-theme-anim-arrow">${isAnimOpen ? '▲' : '▼'}</span>
-                </div>
-                <div id="fcr-theme-anim-body" style="display:${isAnimOpen ? 'block' : 'none'}; padding:5px 8px 6px 8px;">
-                    ${animKeys.map(k => `<span class="fcr-theme-btn${currentTheme===k?' active':''}" id="fcr-theme-btn-${k}" data-theme="${k}">${THEMES[k].label}</span>`).join('\n                    ')}
+                <div id="fcr-theme-anim-section">
+                    <div id="fcr-theme-anim-header" class="fcr-theme-section-header">
+                        <span>✨ Animés</span>
+                        <span id="fcr-theme-anim-arrow">${isAnimOpen ? '▲' : '▼'}</span>
+                    </div>
+                    <div id="fcr-theme-anim-body" style="display:${isAnimOpen ? 'block' : 'none'}; padding:5px 8px 6px 8px;">
+                        ${animKeys.map(k => `<span class="fcr-theme-btn${currentTheme===k?' active':''}" id="fcr-theme-btn-${k}" data-theme="${k}">${THEMES[k].label}</span>`).join('\n                        ')}
+                    </div>
                 </div>
             </div>
         `;
 
         sidebar.insertBefore(panel, sidebar.firstChild);
 
-        document.getElementById('fcr-theme-static-header').addEventListener('click', () => {
+        document.getElementById('fcr-theme-header').addEventListener('click', () => {
+            const content = document.getElementById('fcr-theme-content');
+            const arrow   = document.getElementById('fcr-theme-arrow');
+            const opening = content.style.display === 'none';
+            content.style.display = opening ? 'block' : 'none';
+            arrow.textContent = opening ? '▲' : '▼';
+            GM_setValue('themePanelMasterOpen', opening);
+        });
+
+        document.getElementById('fcr-theme-static-header').addEventListener('click', (e) => {
+            e.stopPropagation();
             const body  = document.getElementById('fcr-theme-static-body');
             const arrow = document.getElementById('fcr-theme-static-arrow');
             const opening = body.style.display === 'none';
@@ -3128,22 +3155,22 @@ body::after {
                         cells.each(function(index) {
                             var cell = $(this);
                             if (cell.hasClass('print-processed')) return;
+                            // Uniquement les colonnes Container (0) et FNSku (2)…
+                            if (index !== 0 && index !== 2) return;
+                            // …uniquement sur les pages de recherche contenant (?s=tsXXXXXXXXX), pas ASIN…
+                            if (!isContainerSearchPage()) return;
+                            // …et uniquement sur les 10 premières lignes du tableau.
+                            var rowIndex = $(tr).index();
+                            if (rowIndex >= 10) return;
                             var link = cell.find('a');
-                            if (link.length > 0 && (index === 0 || index === 1 || index === 2 || index === 3 || index === 11)) {
-                                var type = index === 0 ? "Container" : index === 1 ? "ASIN" : index === 2 ? "FNSku" : index === 3 ? "FCSku" : "Title";
+                            if (link.length > 0) {
+                                var type = index === 0 ? "Container" : "FNSku";
                                 var button = document.createElement("button");
                                 button.innerHTML = "🖶";
                                 button.title = `Print ${type}`;
                                 button.className = 'fcr-print-btn';
                                 button.onclick = function() {
                                     var barcode = link.text().trim();
-                                    if (index === 11) {
-                                        barcode = "N/A"; type = "Unknown";
-                                        if (cells[1].querySelector("a")) { barcode = cells[1].querySelector("a").textContent.trim(); type = "ASIN"; }
-                                        else if (cells[2].querySelector("a")) { barcode = cells[2].querySelector("a").textContent.trim(); type = "FNSku"; }
-                                        else if (cells[3].querySelector("a")) { barcode = cells[3].querySelector("a").textContent.trim(); type = "FCSku"; }
-                                        else if (cells[0].querySelector("a")) { barcode = cells[0].querySelector("a").textContent.trim(); type = "Container"; }
-                                    }
                                     quickPrint(barcode, 1, titleText, type, titleLink);
                                 };
                                 var buttonContainer = document.createElement("span");
@@ -3575,6 +3602,22 @@ body::after {
     })();
 
     // ════════════════════════════════════════════════════════════════
+    // ===== UTILITAIRE — empilement des bandeaux hazmat (anti-doublon) =====
+    // Les bandeaux produit et inventaire partagent la classe .hazmat-fixed-banner.
+    // Cette fonction les empile proprement les uns sous les autres au lieu
+    // de les superposer au même endroit (top:0), ce qui donnait l'impression
+    // de "doublons" quand les deux alertes étaient actives en même temps.
+    // ════════════════════════════════════════════════════════════════
+    function fcrReflowHazmatBanners() {
+        const banners = Array.from(document.querySelectorAll('.hazmat-fixed-banner'));
+        let offset = 0;
+        banners.forEach(b => {
+            b.style.top = offset + 'px';
+            offset += b.getBoundingClientRect().height;
+        });
+    }
+
+    // ════════════════════════════════════════════════════════════════
     // ===== HAZMAT LEVEL DISPLAY =====
     // Moved: now injects AFTER "Max units for tsCage" row
     // ════════════════════════════════════════════════════════════════
@@ -3633,42 +3676,43 @@ body::after {
 
             // injectHazmatPanel_restyle is defined in global scope (called by applyTheme on theme change)
 
-            // ── Bandeau d'alerte hazmat (fixe en haut de la page) ──
-            function buildHazmatBanner(hazmatLevel, lastinMessage, lastinLevel) {
+            // ── Bandeau d'alerte hazmat (fixe en haut de la page, joli + empilable sans chevauchement) ──
+            function buildHazmatBanner(asin, hazmatLevel, lastinMessage, lastinLevel) {
                 let banner = document.getElementById('hazmat-fcr-banner');
                 const refLevel = (lastinLevel !== '' && lastinLevel !== undefined) ? lastinLevel : hazmatLevel;
                 const levelNum = parseInt(refLevel);
                 const isDangerous = !isNaN(levelNum) && (levelNum === 0 || levelNum === 5 || levelNum === 6);
 
                 if (!isDangerous) {
-                    if (banner) banner.remove();
+                    if (banner) { banner.remove(); fcrReflowHazmatBanners(); }
                     return;
                 }
 
                 let bg, icon, label;
-                if (levelNum === 5) { bg = 'linear-gradient(90deg,#d35400,#f39c12)'; icon = '⚠️'; label = 'ATTENTION HAZMAT'; }
-                else                { bg = 'linear-gradient(90deg,#a93226,#e74c3c)'; icon = '🚫'; label = 'HAZMAT INTERDIT'; }
+                if (levelNum === 5) { bg = 'linear-gradient(90deg,#a85c0c,#e08e0f)'; icon = '⚠️'; label = 'ATTENTION HAZMAT'; }
+                else                { bg = 'linear-gradient(90deg,#7a1d15,#c0392b)'; icon = '🚫'; label = 'HAZMAT INTERDIT'; }
 
                 if (!banner) {
                     banner = document.createElement('div');
                     banner.id = 'hazmat-fcr-banner';
+                    banner.className = 'hazmat-fixed-banner';
                     banner.style.cssText = `
-                        position:fixed; top:0; left:0; right:0; z-index:999999;
-                        padding:10px 44px 10px 20px; font-family:Arial,sans-serif;
-                        color:#fff; font-weight:700; font-size:14px;
-                        display:flex; align-items:center; justify-content:center; gap:10px;
-                        box-shadow:0 2px 10px rgba(0,0,0,0.45);
-                        text-align:center; letter-spacing:0.3px; cursor:pointer;
-                        animation:hazmatBannerPulse 1.6s ease-in-out infinite;
+                        position:fixed; left:0; right:0; z-index:999999;
+                        padding:9px 44px 9px 18px; font-family:Arial,sans-serif;
+                        color:#fff; font-size:13px;
+                        box-shadow:0 2px 12px rgba(0,0,0,0.5);
+                        cursor:pointer; border-bottom:1px solid rgba(255,255,255,0.22);
+                        animation:hazmatBannerPulse 1.8s ease-in-out infinite;
+                        transition:top 0.2s ease;
                     `;
                     if (!document.getElementById('hazmat-fcr-banner-style')) {
                         const style = document.createElement('style');
                         style.id = 'hazmat-fcr-banner-style';
-                        style.textContent = `@keyframes hazmatBannerPulse { 0%,100% { filter:brightness(1); } 50% { filter:brightness(1.15); } }`;
+                        style.textContent = `@keyframes hazmatBannerPulse { 0%,100% { filter:brightness(1); } 50% { filter:brightness(1.12); } }`;
                         document.head.appendChild(style);
                     }
                     banner.addEventListener('click', (e) => {
-                        if (e.target.id === 'hazmat-fcr-banner-close') return;
+                        if (e.target.closest('#hazmat-fcr-banner-close')) return;
                         const panel = document.getElementById('hazmat-fcr-panel');
                         if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     });
@@ -3677,14 +3721,22 @@ body::after {
 
                 banner.style.background = bg;
                 banner.innerHTML = `
-                    <span style="font-size:18px;">${icon}</span>
-                    <span>${label} — Niveau ${refLevel}${lastinMessage ? ' · ' + lastinMessage : ''}</span>
-                    <span id="hazmat-fcr-banner-close" title="Fermer" style="position:absolute; right:14px; cursor:pointer; font-size:16px; opacity:0.85;">✕</span>
+                    <div style="display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;max-width:1100px;margin:0 auto;">
+                        <span style="font-size:18px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));">${icon}</span>
+                        <span style="font-weight:800;letter-spacing:0.4px;">${label}</span>
+                        ${asin ? `<span style="background:rgba(255,255,255,0.22);border:1px solid rgba(255,255,255,0.4);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;">ASIN&nbsp;${asin}</span>` : ''}
+                        <span style="background:rgba(0,0,0,0.28);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;">Niveau&nbsp;${refLevel}</span>
+                        ${lastinMessage ? `<span style="font-size:11px;font-weight:500;opacity:0.92;">· ${lastinMessage}</span>` : ''}
+                    </div>
+                    <span id="hazmat-fcr-banner-close" title="Fermer" style="position:absolute; right:12px; top:50%; transform:translateY(-50%); cursor:pointer; font-size:13px; width:20px; height:20px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:rgba(0,0,0,0.22); opacity:0.9;">✕</span>
                 `;
                 banner.querySelector('#hazmat-fcr-banner-close').addEventListener('click', (e) => {
                     e.stopPropagation();
                     banner.remove();
+                    fcrReflowHazmatBanners();
                 });
+
+                fcrReflowHazmatBanners();
             }
 
             function buildHazmatPanel(anchorRow, asin, hazmatLevel, lastinMessage, lastinLevel, pcApproved) {
@@ -3784,8 +3836,8 @@ body::after {
                     anchorRow.parentNode.insertBefore(wrapperRow, anchorRow.nextSibling);
                 }
 
-                if (isLoading) buildHazmatBanner('', '', '');
-                else buildHazmatBanner(hazmatLevel, lastinMessage, lastinLevel);
+                if (isLoading) buildHazmatBanner(asin, '', '', '');
+                else buildHazmatBanner(asin, hazmatLevel, lastinMessage, lastinLevel);
             }
 
             function fetchHazmatLevel(asin, fc) {
@@ -3973,23 +4025,24 @@ body::after {
         if (!banner) {
             banner = document.createElement('div');
             banner.id = 'hazmat-inventory-fcr-banner';
+            banner.className = 'hazmat-fixed-banner';
             banner.style.cssText = `
-                position:fixed; top:0; left:0; right:0; z-index:999999;
-                padding:10px 44px 10px 20px; font-family:Arial,sans-serif;
-                color:#fff; font-weight:700; font-size:14px; background:linear-gradient(90deg,#a93226,#e74c3c);
-                display:flex; align-items:center; justify-content:center; gap:10px;
-                box-shadow:0 2px 10px rgba(0,0,0,0.45);
-                text-align:center; letter-spacing:0.3px; cursor:pointer;
-                animation:hazmatBannerPulse 1.6s ease-in-out infinite;
+                position:fixed; left:0; right:0; z-index:999998;
+                padding:9px 44px 9px 18px; font-family:Arial,sans-serif;
+                color:#fff; font-size:13px; background:linear-gradient(90deg,#7a1d15,#c0392b);
+                box-shadow:0 2px 12px rgba(0,0,0,0.5);
+                cursor:pointer; border-bottom:1px solid rgba(255,255,255,0.22);
+                animation:hazmatBannerPulse 1.8s ease-in-out infinite;
+                transition:top 0.2s ease;
             `;
             if (!document.getElementById('hazmat-fcr-banner-style')) {
                 const style = document.createElement('style');
                 style.id = 'hazmat-fcr-banner-style';
-                style.textContent = `@keyframes hazmatBannerPulse { 0%,100% { filter:brightness(1); } 50% { filter:brightness(1.15); } }`;
+                style.textContent = `@keyframes hazmatBannerPulse { 0%,100% { filter:brightness(1); } 50% { filter:brightness(1.12); } }`;
                 document.head.appendChild(style);
             }
             banner.addEventListener('click', (e) => {
-                if (e.target.id === 'hazmat-inventory-fcr-banner-close') return;
+                if (e.target.closest('#hazmat-inventory-fcr-banner-close')) return;
                 const chip = document.getElementById('inventoryHazmatChip');
                 if (chip) chip.scrollIntoView({ behavior: 'smooth', block: 'center' });
             });
@@ -3997,19 +4050,25 @@ body::after {
         }
         const list = forbiddenAsins.slice(0, 5).join(', ') + (forbiddenAsins.length > 5 ? '…' : '');
         banner.innerHTML = `
-            <span style="font-size:18px;">🚫</span>
-            <span>HAZMAT INTERDIT DANS L'INVENTAIRE — ${forbiddenAsins.length} ASIN : ${list}</span>
-            <span id="hazmat-inventory-fcr-banner-close" title="Fermer" style="position:absolute; right:14px; cursor:pointer; font-size:16px; opacity:0.85;">✕</span>
+            <div style="display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;max-width:1100px;margin:0 auto;">
+                <span style="font-size:18px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));">🚫</span>
+                <span style="font-weight:800;letter-spacing:0.4px;">HAZMAT INTERDIT DANS L'INVENTAIRE</span>
+                <span style="background:rgba(0,0,0,0.28);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;">${forbiddenAsins.length} ASIN</span>
+                <span style="font-size:11px;font-weight:500;opacity:0.92;">${list}</span>
+            </div>
+            <span id="hazmat-inventory-fcr-banner-close" title="Fermer" style="position:absolute; right:12px; top:50%; transform:translateY(-50%); cursor:pointer; font-size:13px; width:20px; height:20px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:rgba(0,0,0,0.22); opacity:0.9;">✕</span>
         `;
         banner.querySelector('#hazmat-inventory-fcr-banner-close').addEventListener('click', (e) => {
             e.stopPropagation();
             banner.remove();
+            fcrReflowHazmatBanners();
         });
+        fcrReflowHazmatBanners();
     }
 
     function removeInventoryHazmatBanner() {
         const banner = document.getElementById('hazmat-inventory-fcr-banner');
-        if (banner) banner.remove();
+        if (banner) { banner.remove(); fcrReflowHazmatBanners(); }
     }
 
     function addInventoryHazmatIndicator() {
@@ -4230,7 +4289,7 @@ body::after {
             fab.id = 'fcr-problem-fab';
             fab.title = 'Problems résumé';
             fab.style.cssText = `
-                position:fixed; bottom:24px; right:260px; z-index:99990;
+                position:fixed; bottom:216px; right:24px; z-index:99990;
                 width:48px; height:48px; border-radius:50%;
                 background:${isDark ? (t.isGradient ? t.gradBtn : t.bg3) : '#cc0000'};
                 color:${accentColor}; font-size:20px;
@@ -4263,13 +4322,15 @@ body::after {
             const panel = document.createElement('div');
             panel.id = 'fcr-problem-panel';
             panel.style.cssText = `
-                position:fixed; bottom:82px; right:260px; z-index:99989;
-                width:440px; border-radius:12px;
+                position:fixed; z-index:99989;
+                border-radius:12px;
                 background:${panelBg}; border:1px solid ${borderColor};
                 box-shadow:0 8px 32px rgba(0,0,0,0.4);
                 font-family:Arial,sans-serif; font-size:14px;
-                display:none; overflow:hidden; max-height:75vh; flex-direction:column;
+                display:none; flex-direction:column;
             `;
+            fcrFitFabPanel(panel, 84, 216, 440, 560, true);
+            window.addEventListener('resize', debounce(() => fcrFitFabPanel(panel, 84, 216, 440, 560, true), 150));
 
             // Header
             const header = document.createElement('div');
@@ -4681,7 +4742,7 @@ body::after {
         fab.title = 'Étiquettes';
         fab.innerHTML = '🏷️';
         fab.style.cssText = `
-            position:fixed; bottom:24px; right:84px; z-index:99990;
+            position:fixed; bottom:24px; right:24px; z-index:99990;
             width:48px; height:48px; border-radius:50%;
             background:${v.isDark ? (t.isGradient ? t.gradBtn : t.bg3) : '#ff9900'};
             color:${v.accentColor}; font-size:22px;
@@ -4700,13 +4761,15 @@ body::after {
         const panel = document.createElement('div');
         panel.id = 'etiq2-panel';
         panel.style.cssText = `
-            position:fixed; bottom:82px; right:84px; z-index:99989;
-            width:310px; border-radius:12px;
+            position:fixed; z-index:99989;
+            border-radius:12px;
             background:${v.panelBg}; border:1px solid ${v.borderColor};
             box-shadow:0 8px 32px rgba(0,0,0,0.4);
             font-family:Arial,sans-serif; font-size:13px;
-            display:none; overflow:hidden;
+            display:none;
         `;
+        fcrFitFabPanel(panel, 84, 24, 310, 560, true);
+        window.addEventListener('resize', debounce(() => fcrFitFabPanel(panel, 84, 24, 310, 560, true), 150));
 
         // Header
         const header = document.createElement('div');
@@ -5176,8 +5239,11 @@ body::after {
                 if (cs.position !== 'fixed' && cs.position !== 'sticky') continue;
                 const r = el.getBoundingClientRect();
                 if (r.height <= 0 || r.width <= 0) continue;
+                // Les bandeaux hazmat s'empilent (voir fcrReflowHazmatBanners) : celui du bas
+                // a un top > 20, on l'accepte quand même explicitement pour ne pas être masqué.
+                const isStackedHazmatBanner = el.classList && el.classList.contains('hazmat-fixed-banner');
                 // Doit être collé en haut (top proche de 0) pour être considéré comme un header
-                if (r.top > 20) continue;
+                if (r.top > 20 && !isStackedHazmatBanner) continue;
                 // Doit chevaucher horizontalement la colonne de la sidebar
                 if (r.right <= sidebarRect.left || r.left >= sidebarRect.right) continue;
                 if (r.bottom > maxBottom) maxBottom = r.bottom;
@@ -5681,19 +5747,29 @@ body::after {
     // fenêtre visible (sans jamais dépasser en haut/à gauche), en se
     // rapprochant le plus possible de la taille "idéale" souhaitée.
     // ════════════════════════════════════════════════════════════════
-    function fcrFitFabPanel(panel, rightOffset, bottomOffset, idealWidth, idealHeight) {
-        const margin = 12, minWidth = 300, minHeight = 360;
+    function fcrFitFabPanel(panel, rightOffset, bottomOffset, idealWidth, idealHeight, useMaxHeight) {
+        const margin = 12, minWidth = 300, minHeight = 200;
         const availWidth  = window.innerWidth  - rightOffset  - margin;
         const availHeight = window.innerHeight - bottomOffset - margin;
         const width  = Math.max(minWidth,  Math.min(idealWidth,  availWidth));
         const height = Math.max(minHeight, Math.min(idealHeight, availHeight));
         panel.style.width  = width + 'px';
-        panel.style.height = height + 'px';
+        if (useMaxHeight) {
+            // Contenu à hauteur naturelle : on plafonne plutôt que de forcer, avec scroll interne.
+            panel.style.maxHeight = height + 'px';
+            panel.style.overflowY = 'auto';
+        } else {
+            panel.style.height = height + 'px';
+        }
         // Si même la largeur minimale ne rentre pas avec cet offset, on colle
         // le panneau tout près du bord droit plutôt que de le laisser déborder.
         panel.style.right = (rightOffset + width > window.innerWidth - 4)
             ? '4px'
             : rightOffset + 'px';
+        // Idem verticalement : si le panneau + son offset bas dépasse le haut de l'écran, on colle en bas.
+        panel.style.bottom = (bottomOffset + height > window.innerHeight - 4)
+            ? '4px'
+            : bottomOffset + 'px';
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -5735,7 +5811,7 @@ body::after {
             fab.title = 'Edit Item';
             fab.innerHTML = '✏️';
             fab.style.cssText = `
-                position:fixed; bottom:24px; right:140px; z-index:99990;
+                position:fixed; bottom:88px; right:24px; z-index:99990;
                 width:48px; height:48px; border-radius:50%;
                 background:${v.isDark ? (t.isGradient ? t.gradBtn : t.bg3) : '#ff9900'};
                 color:${v.accentColor}; font-size:22px;
@@ -5754,15 +5830,15 @@ body::after {
             const panel = document.createElement('div');
             panel.id = 'fcr-edititems-panel';
             panel.style.cssText = `
-                position:fixed; bottom:82px; right:140px; z-index:99989;
+                position:fixed; z-index:99989;
                 border-radius:12px;
                 background:${v.panelBg}; border:1px solid ${v.borderColor};
                 box-shadow:0 8px 32px rgba(0,0,0,0.4);
                 font-family:Arial,sans-serif; font-size:13px;
                 display:none; flex-direction:column; overflow:hidden;
             `;
-            fcrFitFabPanel(panel, 140, 82, 420, 620);
-            window.addEventListener('resize', debounce(() => fcrFitFabPanel(panel, 140, 82, 420, 620), 150));
+            fcrFitFabPanel(panel, 84, 88, 420, 620);
+            window.addEventListener('resize', debounce(() => fcrFitFabPanel(panel, 84, 88, 420, 620), 150));
 
             const header = document.createElement('div');
             header.style.cssText = `
@@ -5882,7 +5958,7 @@ body::after {
             fab.title = 'Move Item';
             fab.innerHTML = '📦';
             fab.style.cssText = `
-                position:fixed; bottom:24px; right:200px; z-index:99990;
+                position:fixed; bottom:152px; right:24px; z-index:99990;
                 width:48px; height:48px; border-radius:50%;
                 background:${v.isDark ? (t.isGradient ? t.gradBtn : t.bg3) : '#ff9900'};
                 color:${v.accentColor}; font-size:22px;
@@ -5901,15 +5977,15 @@ body::after {
             const panel = document.createElement('div');
             panel.id = 'fcr-moveitems-panel';
             panel.style.cssText = `
-                position:fixed; bottom:82px; right:200px; z-index:99989;
+                position:fixed; z-index:99989;
                 border-radius:12px;
                 background:${v.panelBg}; border:1px solid ${v.borderColor};
                 box-shadow:0 8px 32px rgba(0,0,0,0.4);
                 font-family:Arial,sans-serif; font-size:13px;
                 display:none; flex-direction:column; overflow:hidden;
             `;
-            fcrFitFabPanel(panel, 200, 82, 420, 620);
-            window.addEventListener('resize', debounce(() => fcrFitFabPanel(panel, 200, 82, 420, 620), 150));
+            fcrFitFabPanel(panel, 84, 152, 420, 620);
+            window.addEventListener('resize', debounce(() => fcrFitFabPanel(panel, 84, 152, 420, 620), 150));
 
             const header = document.createElement('div');
             header.style.cssText = `
