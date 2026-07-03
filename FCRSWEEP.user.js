@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         FCR Lite Ultra V4 — SWEEP
-// @version      3.1.0
+// @version      3.1.3
 // @description  FCR Lite SWEEP — Thèmes, Prep, God Mode Print, Hazmat, Étiquettes, Couleurs, CSV, Weight (sans Bin Check, Floor Finder, Analyse Palette)
 // @author       @JEANBAYD
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2*
@@ -1555,12 +1555,42 @@ body::after {
         table.a-bordered                    { border: 1px solid ${t.accentDark}; }
         table.a-bordered tr:last-child td   { border-color: ${t.accentDark}; }
         table.a-bordered tr:first-child th  { background: ${t.bg3}; color: ${t.accent}; border-color: ${t.accentDark}; }
+        /* Tables DataTables.js (Inventory / Inventory History) — non couvertes par
+           table.a-bordered car DataTables génère son propre markup (dataTable,
+           dataTables_scrollHead/Body, dataTables_wrapper) au lieu du composant AUI. */
+        table.dataTable                     { background: transparent; border-collapse: collapse !important; }
+        table.dataTable tbody tr.odd        { background-color: ${t.bg2} !important; }
+        table.dataTable tbody tr.even       { background-color: ${t.bg1} !important; }
+        table.dataTable tbody td            { color: #d1d5db !important; border-bottom: 1px solid ${t.accentDark}; }
+        table.dataTable thead th,
+        .dataTables_scrollHead thead th     { background: ${t.bg3} !important; color: ${t.accent} !important; border-color: ${t.accentDark} !important; }
+        .dataTables_wrapper                 { color: #d1d5db; }
+        .dataTables_wrapper .dataTables_info,
+        .dataTables_wrapper .dataTables_length,
+        .dataTables_wrapper .dataTables_filter,
+        .dataTables_wrapper .dataTables_paginate { color: #d1d5db !important; }
+        .dataTables_wrapper .dataTables_filter input,
+        .dataTables_wrapper .dataTables_length select { background: ${t.bg1} !important; color: #d1d5db !important; border: 1px solid ${t.accentDark} !important; }
+        .dataTables_wrapper .dataTables_paginate .paginate_button {
+            color: ${t.accent} !important; border: 1px solid transparent;
+        }
+        .dataTables_wrapper .dataTables_paginate .paginate_button.current {
+            background: ${t.isGradient ? t.gradBtn : t.bg3} !important; color: ${t.accent} !important; border-color: ${t.accentDark} !important;
+        }
+        .dataTables_wrapper .dataTables_paginate .paginate_button:hover {
+            background: ${t.bg3} !important; color: ${t.accent} !important; border-color: ${t.accentDark} !important;
+        }
+        .dataTables_wrapper .dataTables_paginate .paginate_button.disabled { opacity: 0.4; }
+        .dataTables_scrollBody::-webkit-scrollbar, .dataTables_scrollHead::-webkit-scrollbar { height: 8px; width: 6px; }
+        .dataTables_scrollBody::-webkit-scrollbar-track { background: ${t.bg2}; }
+        .dataTables_scrollBody::-webkit-scrollbar-thumb { background: ${t.accentDark}; border-radius: 3px; }
+        .dataTables_scrollBody::-webkit-scrollbar-thumb:hover { background: ${t.accent}; }
         table.a-keyvalue td, table.a-keyvalue th { border-top: 1px solid ${t.accentDark}; }
         table.a-keyvalue                    { border-bottom: 1px solid ${t.accentDark}; }
         .a-keyvalue th                      { background-color: ${t.bg3} !important; color: ${t.accent} !important; }
         .a-box, .a-cal-na, #fcrp_cfg, table.a-keyvalue th { background-color: ${t.bg2}; border: 1px ${t.accentDark} solid; color: #d1d5db; }
         .a-box                              { border-top-color: ${t.accent} !important; }
-        .a-box-title .a-box-inner, .a-popover-header, .aui-nav-row { color: #ffffff; background: ${t.bg2}; background: ${t.isGradient ? t.gradHeader : `linear-gradient(to bottom, ${t.bg3}, ${t.bg1})`}; }
+        .a-box-title .a-box-inner, .a-popover-header, .aui-nav-row { color: ${t.accent}; background: ${t.bg2}; background: ${t.isGradient ? t.gradHeader : `linear-gradient(to bottom, ${t.bg3}, ${t.bg1})`}; }
         .p, .a-popover-inner, body a        { color: #d1d5db !important; }
         .a-nostyle, .a-nostyle span         { color: ${t.accent} !important; }
         h6                                  { color: #8a94ad; }
@@ -1702,6 +1732,15 @@ body::after {
         table.a-bordered tr.even td         { background-color: ${hexToRgba(t.bg1, 0.28)} !important; }
         table.a-bordered tr:first-child th  { background: ${hexToRgba(t.bg3, 0.55)} !important; }
         table.a-bordered                    { background: transparent !important; }
+        /* Idem pour les tables DataTables.js (Inventory / Inventory History) */
+        table.dataTable tbody tr.odd        { background-color: ${hexToRgba(t.bg2, 0.38)} !important; }
+        table.dataTable tbody tr.even       { background-color: ${hexToRgba(t.bg1, 0.28)} !important; }
+        table.dataTable thead th,
+        .dataTables_scrollHead thead th     { background: ${hexToRgba(t.bg3, 0.55)} !important; }
+        table.dataTable                     { background: transparent !important; }
+        .dataTables_wrapper .dataTables_paginate .paginate_button.current {
+            background: ${hexToRgba(t.bg3, 0.55)} !important;
+        }
         .a-box, .a-cal-na, #fcrp_cfg, table.a-keyvalue th { background-color: ${hexToRgba(t.bg2, 0.42)} !important; }
         .a-keyvalue th                      { background-color: ${hexToRgba(t.bg3, 0.5)} !important; }
         .a-box-title .a-box-inner, .a-popover-header, .aui-nav-row {
@@ -2269,9 +2308,8 @@ body::after {
                 imageContainer.style.left = `${left}px`;
             }
 
-            function handleMouseEnter(event, asin) {
-                const element = event.target;
-                const rect = element.getBoundingClientRect();
+            function handleMouseEnter(anchorEl, asin) {
+                const rect = anchorEl.getBoundingClientRect();
                 imageContainer.style.cssText = `
                     display: block;
                     position: fixed;
@@ -2287,7 +2325,7 @@ body::after {
                     max-height: 350px;
                 `;
                 imageContainer.innerHTML = 'Loading...';
-                setTimeout(() => positionContainer(element), 10);
+                setTimeout(() => positionContainer(anchorEl), 10);
                 const warehouseId = document.cookie.split('; ').find(row => row.startsWith('fcmenu-warehouseId='))?.split('=')[1];
                 if (!warehouseId) { imageContainer.innerHTML = 'Error: Missing site authentication'; return; }
                 GM_xmlhttpRequest({
@@ -2311,34 +2349,17 @@ body::after {
                             productImg.style.maxWidth = '340px';
                             productImg.style.maxHeight = '340px';
                             productImg.style.display = 'block';
-                            productImg.onload = function() { positionContainer(element); };
-                            productImg.onerror = function() { imageContainer.innerHTML = 'Image unavailable'; positionContainer(element); };
+                            productImg.onload = function() { positionContainer(anchorEl); };
+                            productImg.onerror = function() { imageContainer.innerHTML = 'Image unavailable'; positionContainer(anchorEl); };
                             imageContainer.innerHTML = '';
                             imageContainer.appendChild(productImg);
-                            setTimeout(() => positionContainer(element), 50);
+                            setTimeout(() => positionContainer(anchorEl), 50);
                         } else {
                             imageContainer.innerHTML = 'No image available';
-                            positionContainer(element);
+                            positionContainer(anchorEl);
                         }
                     },
-                    onerror: function() { imageContainer.innerHTML = 'Error loading image'; positionContainer(element); }
-                });
-            }
-
-            // Perf : on scanne uniquement la zone déjà observée (hoverRoot)
-            // au lieu de tout le document à chaque déclenchement.
-            const hoverRoot = fcrGetRoot();
-
-            function addHoverListeners() {
-                const links = hoverRoot.querySelectorAll('a');
-                links.forEach(link => {
-                    if (link.hasAttribute('data-image-hover-added')) return;
-                    const text = link.textContent.trim();
-                    if (text.match(/^(B[A-Z0-9]{9}|X0[A-Z0-9]{8})$/)) {
-                        link.setAttribute('data-image-hover-added', 'true');
-                        link.addEventListener('mouseenter', (e) => handleMouseEnter(e, text));
-                        link.addEventListener('mouseleave', handleMouseLeave);
-                    }
+                    onerror: function() { imageContainer.innerHTML = 'Error loading image'; positionContainer(anchorEl); }
                 });
             }
 
@@ -2346,14 +2367,38 @@ body::after {
                 imageContainer.style.display = 'none';
             }
 
-            addHoverListeners();
+            // Perf : délégation d'événement — UN SEUL listener sur hoverRoot au lieu
+            // d'un mouseenter/mouseleave par lien ASIN (jusqu'à ~1500 listeners/reload
+            // mesurés en usage intensif via le profiler). Plus besoin de re-scanner
+            // hoverRoot.querySelectorAll('a') à chaque mutation du DOM non plus — ça
+            // couvrait potentiellement des centaines de liens à chaque ligne ajoutée
+            // au tableau, c'était le vrai coût CPU, pas juste le nombre de listeners.
+            // Les liens ajoutés dynamiquement plus tard sont couverts automatiquement
+            // par la délégation, sans rien à recalculer.
+            const hoverRoot = fcrGetRoot();
+            const ASIN_LINK_RE = /^(B[A-Z0-9]{9}|X0[A-Z0-9]{8})$/;
+            let hoveredLink = null;
 
-            // Perf : mutualisé sur l'observer racine partagé (fcrOnRootMutation)
-            // au lieu d'un MutationObserver dédié.
-            fcrOnRootMutation(debounce((mutations) => {
-                const hasAdded = mutations.some(m => m.addedNodes.length);
-                if (hasAdded) addHoverListeners();
-            }, 300));
+            function matchAsinLink(target) {
+                const link = target && target.closest ? target.closest('a') : null;
+                if (!link || !hoverRoot.contains(link)) return null;
+                const text = link.textContent.trim();
+                return ASIN_LINK_RE.test(text) ? { link, text } : null;
+            }
+
+            hoverRoot.addEventListener('mouseover', (e) => {
+                const match = matchAsinLink(e.target);
+                if (!match || match.link === hoveredLink) return;
+                hoveredLink = match.link;
+                handleMouseEnter(match.link, match.text);
+            });
+
+            hoverRoot.addEventListener('mouseout', (e) => {
+                if (!hoveredLink) return;
+                if (e.relatedTarget && hoveredLink.contains(e.relatedTarget)) return; // toujours dans le même lien
+                hoveredLink = null;
+                handleMouseLeave();
+            });
         }
         addImageHoverToASINs();
     }
