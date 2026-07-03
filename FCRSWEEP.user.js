@@ -45,6 +45,7 @@
         godModePrint:   { label: '🖨️ God Mode (impression)',      default: true },
         hazmat:         { label: '☢️ Hazmat Level Display',       default: true },
         amazonFrPrice:  { label: '🛒 Prix Amazon.fr',             default: true },
+        perfMode:       { label: '⚡ Mode performance (coupe glow/ombre)', default: false },
     };
 
     const MODULE_CACHE = {};
@@ -58,6 +59,39 @@
     function setModuleEnabled(key, value) {
         GM_setValue('module_' + key, value);
         MODULE_CACHE[key] = value;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // ===== MODE PERFORMANCE (coupe les propriétés d'animation coûteuses) =====
+    // ════════════════════════════════════════════════════════════════
+    // Neutralise box-shadow / text-shadow / filter / background-position
+    // animés injectés par les thèmes animés et le bandeau hazmat (les
+    // propriétés les plus chères à repeindre), SANS toucher aux animations
+    // transform/opacity (quasi gratuites côté GPU : chute des pétales,
+    // flottement des fantômes, etc.), qui continuent de tourner normalement.
+    // Ne cible que les éléments injectés par ce script (id/classe préfixés
+    // "fcr-"/"hazmat-fcr-"), jamais les éléments natifs de la page.
+    // Appliqué instantanément via un <style> dédié, sans reload nécessaire.
+    let _fcrPerfStyleEl = null;
+    function fcrUpdatePerfModeStyle() {
+        if (!_fcrPerfStyleEl) {
+            _fcrPerfStyleEl = document.createElement('style');
+            _fcrPerfStyleEl.id = 'fcr-perfmode-style';
+            (document.head || document.documentElement).appendChild(_fcrPerfStyleEl);
+        }
+        _fcrPerfStyleEl.textContent = isModuleEnabled('perfMode') ? `
+            #fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel,
+            [class^="fcr-"], [id^="fcr-"], [id^="hazmat-fcr-"], .hazmat-fixed-banner,
+            [class^="fcr-"] *, [id^="fcr-"] *, [id^="hazmat-fcr-"] *, .hazmat-fixed-banner * {
+                box-shadow: none !important;
+                text-shadow: none !important;
+                filter: none !important;
+                -webkit-filter: none !important;
+            }
+            #fcr-theme-header, #fcr-module-header, #hazmat-fcr-header {
+                background-position: 50% 50% !important;
+            }
+        ` : '';
     }
 
     function injectModulePanel() {
@@ -106,6 +140,12 @@
                 const nowEnabled = !isModuleEnabled(k);
                 setModuleEnabled(k, nowEnabled);
                 this.classList.toggle('on', nowEnabled);
+                // Le mode performance s'applique instantanément (simple <style>
+                // toggle), pas besoin de recharger la page pour celui-ci.
+                if (k === 'perfMode') {
+                    fcrUpdatePerfModeStyle();
+                    return;
+                }
                 // Show reload notice
                 if (!document.getElementById('fcr-reload-notice')) {
                     const notice = document.createElement('div');
@@ -258,6 +298,40 @@
             clearTimeout(timeoutId);
             timeoutId = setTimeout(() => func.apply(this, args), delay);
         };
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // ===== OBSERVER RACINE PARTAGÉ (perf) =====
+    // ════════════════════════════════════════════════════════════════
+    // Avant : hazmatObserver, inventoryObserver, prepObserver, probObserver,
+    // l'observer du prix Amazon.fr, l'observer hover images et l'observer
+    // du statut inventaire (module Edit Item) créaient chacun leur PROPRE
+    // MutationObserver sur main/#content (voire document.body pour ce
+    // dernier). Résultat : jusqu'à 7 handlers indépendants réveillés à
+    // CHAQUE mutation DOM (un survol, une tooltip, une animation de
+    // thème...), même quand une seule fonctionnalité est concernée.
+    // Ici : un seul MutationObserver réel observe main/#content, et chaque
+    // fonctionnalité s'enregistre simplement avec son callback (qui garde
+    // son propre debounce individuel comme avant). Comportement strictement
+    // identique, mais un seul "capteur" DOM partagé au lieu de 7.
+    let _fcrRootObserver = null;
+    const _fcrRootCallbacks = [];
+
+    function fcrGetRoot() {
+        return document.querySelector('main') || document.querySelector('[role="main"]') || document.querySelector('#content') || document.body;
+    }
+
+    function fcrOnRootMutation(callback) {
+        _fcrRootCallbacks.push(callback);
+        if (!_fcrRootObserver) {
+            _fcrRootObserver = new MutationObserver((mutations) => {
+                _fcrRootCallbacks.forEach(cb => {
+                    try { cb(mutations); } catch (e) { /* un callback en erreur ne doit pas bloquer les autres */ }
+                });
+            });
+            _fcrRootObserver.observe(fcrGetRoot(), { childList: true, subtree: true, attributes: false, characterData: false });
+        }
+        return _fcrRootObserver;
     }
 
     function getCookie(c) {
@@ -1813,6 +1887,7 @@ body::after {
     }
 
     applyTheme(currentTheme);
+    fcrUpdatePerfModeStyle();
 
     function injectThemePanel() {
         const sidebar = document.querySelector('#side-bar') || document.querySelector('.sidebar') || document.querySelector('[id*="side"]');
@@ -2152,13 +2227,13 @@ body::after {
             .then(() => {
                 injectAmazonFrPrice();
                 // Re-observe les mutations de page (navigation SPA)
-                const priceRoot = document.querySelector('main') || document.querySelector('[role="main"]') || document.querySelector('#content') || document.body;
-                const obs = new MutationObserver(debounce(() => {
+                // Perf : mutualisé sur l'observer racine partagé (fcrOnRootMutation)
+                // au lieu d'un MutationObserver dédié.
+                fcrOnRootMutation(debounce(() => {
                     if (!document.getElementById('fcr-amzfr-price-badge')) {
                         injectAmazonFrPrice();
                     }
                 }, 400));
-                obs.observe(priceRoot, { childList: true, subtree: true });
             })
             .catch(() => {});
     }
@@ -2252,7 +2327,7 @@ body::after {
 
             // Perf : on scanne uniquement la zone déjà observée (hoverRoot)
             // au lieu de tout le document à chaque déclenchement.
-            const hoverRoot = document.querySelector('main') || document.querySelector('[role="main"]') || document.querySelector('#content') || document.body;
+            const hoverRoot = fcrGetRoot();
 
             function addHoverListeners() {
                 const links = hoverRoot.querySelectorAll('a');
@@ -2273,11 +2348,12 @@ body::after {
 
             addHoverListeners();
 
-            const observer = new MutationObserver(debounce((mutations) => {
+            // Perf : mutualisé sur l'observer racine partagé (fcrOnRootMutation)
+            // au lieu d'un MutationObserver dédié.
+            fcrOnRootMutation(debounce((mutations) => {
                 const hasAdded = mutations.some(m => m.addedNodes.length);
                 if (hasAdded) addHoverListeners();
             }, 300));
-            observer.observe(hoverRoot, { childList: true, subtree: true });
         }
         addImageHoverToASINs();
     }
@@ -2643,7 +2719,9 @@ body::after {
     let prepInstructionsAdded = false;
     let lastUrl = location.href;
 
-    const prepObserver = new MutationObserver(debounce(() => {
+    // Perf : mutualisé sur l'observer racine partagé (fcrOnRootMutation)
+    // au lieu d'un MutationObserver dédié sur main/#content.
+    fcrOnRootMutation(debounce(() => {
         const currentUrl = location.href;
         if (currentUrl !== lastUrl) {
             lastUrl = currentUrl;
@@ -2651,8 +2729,6 @@ body::after {
             setTimeout(() => { addPrepInstructions(); addPrepButtons(); }, 2000);
         } else if (!prepInstructionsAdded) { addPrepInstructions(); }
     }, 800)); // debounce augmenté 500→800ms
-    const prepRoot = document.querySelector('main') || document.querySelector('[role="main"]') || document.querySelector('#content') || document.body;
-    prepObserver.observe(prepRoot, { childList: true, subtree: true, attributes: false, characterData: false });
     setTimeout(() => { addPrepInstructions(); addPrepButtons(); }, 2000);
 
     // ════════════════════════════════════════════════════════════════
@@ -3962,7 +4038,9 @@ body::after {
             else setTimeout(initHazmat, 2500);
 
             let hazmatDebounceTimer = null;
-            const hazmatObserver = new MutationObserver(function(mutations) {
+            // Perf : mutualisé sur l'observer racine partagé (fcrOnRootMutation)
+            // au lieu d'un MutationObserver dédié sur main/#content.
+            fcrOnRootMutation(function(mutations) {
                 // Ignorer les mutations provenant du panel hazmat lui-même (anti-boucle)
                 const selfMutation = mutations.every(m =>
                     m.target === document.getElementById('hazmat-fcr-panel') ||
@@ -3982,8 +4060,6 @@ body::after {
                     }
                 }, 600);
             });
-            const hazmatRoot = document.querySelector('main') || document.querySelector('[role="main"]') || document.querySelector('#content') || document.body;
-            hazmatObserver.observe(hazmatRoot, { childList: true, subtree: true });
         })();
     }
 
@@ -4169,10 +4245,10 @@ body::after {
 
     // ===== OBSERVERS POUR LES BOUTONS INVENTORY =====
     // ════════════════════════════════════════════════════════════════
-    // Observer ciblé sur le contenu principal, pas document.body entier.
-    // Debounce 500ms pour éviter les déclenchements en rafale.
-    const inventoryRoot = document.querySelector('main') || document.querySelector('[role="main"]') || document.querySelector('#content') || document.body;
-    const inventoryObserver = new MutationObserver(debounce(() => {
+    // Perf : mutualisé sur l'observer racine partagé (fcrOnRootMutation)
+    // au lieu d'un MutationObserver dédié sur main/#content.
+    // Debounce 800ms pour éviter les déclenchements en rafale.
+    fcrOnRootMutation(debounce(() => {
         const hasInventory = !!document.querySelector('[data-section-type="inventory"]');
         const hasHistory   = !!document.querySelector('#table-inventory-history');
         const hasCsvBtn    = !!document.getElementById('csvExportButton');
@@ -4189,7 +4265,6 @@ body::after {
         }
         if (hasHistory && !hasHistoryBtn) addCsvHistoryButton();
     }, 800)); // debounce augmenté 500→800ms
-    inventoryObserver.observe(inventoryRoot, { childList: true, subtree: true, attributes: false, characterData: false });
 
     setTimeout(() => {
         if (document.querySelector('[data-section-type="inventory"]')) { addWeightButton(); addCsvExportButton(); addTotalPriceButton(); addInventoryHazmatIndicator(); }
@@ -4472,9 +4547,10 @@ body::after {
         }
 
         // Observer : réinjecter si la table apparaît dynamiquement
-        const probRoot = document.querySelector('main') || document.querySelector('[role="main"]') || document.body;
+        // Perf : mutualisé sur l'observer racine partagé (fcrOnRootMutation)
+        // au lieu d'un MutationObserver dédié.
         let probDebounce = null;
-        const probObserver = new MutationObserver(() => {
+        fcrOnRootMutation(() => {
             clearTimeout(probDebounce);
             probDebounce = setTimeout(() => {
                 if (!document.getElementById('fcr-problem-fab') && document.querySelector('#table-problems')) {
@@ -4482,7 +4558,6 @@ body::after {
                 }
             }, 800);
         });
-        probObserver.observe(probRoot, { childList: true, subtree: true });
 
     })();
 
@@ -5250,7 +5325,12 @@ body::after {
 
             // 1) Cas le plus courant : un header en position fixed/sticky collé en haut de l'écran
             //    qui chevauche horizontalement la sidebar (donc passe "par-dessus" elle).
-            const all = document.querySelectorAll('body *');
+            // Perf : un header fixed/sticky se trouve quasi toujours près de la racine du
+            // <body> (pas enfoui dans une table inventaire de plusieurs milliers de lignes).
+            // On borne donc le scan aux 4 premiers niveaux sous body au lieu de tout le
+            // sous-arbre ("body *"), ce qui évite un getComputedStyle()+getBoundingClientRect()
+            // (donc un reflow forcé) sur chaque ligne de tableau à chaque appel.
+            const all = document.body.querySelectorAll(':scope > *, :scope > * > *, :scope > * > * > *, :scope > * > * > * > *');
             for (const el of all) {
                 if (el === sidebar || sidebar.contains(el) || el.contains(sidebar)) continue;
                 const cs = getComputedStyle(el);
@@ -5290,12 +5370,18 @@ body::after {
             document.documentElement.style.setProperty('--fcr-sidebar-offset', offset + 'px');
         }
 
+        // Perf : resize et MutationObserver debouncés (150-200ms) comme partout ailleurs
+        // dans le script. Avant, un simple redimensionnement de fenêtre ou l'ajout d'un
+        // élément par le script lui-même sur document.body (tooltip, bandeau, modale...)
+        // déclenchait un recalcul complet en rafale, sans aucun throttle.
+        const applyOffsetDebounced = debounce(applyOffset, 150);
+
         function init() {
             applyOffset();
-            window.addEventListener('resize', applyOffset);
-            window.addEventListener('orientationchange', applyOffset);
+            window.addEventListener('resize', applyOffsetDebounced);
+            window.addEventListener('orientationchange', applyOffsetDebounced);
             // Recalcul si le DOM autour du sidebar change (header dynamique, bannières, etc.)
-            const ro = new MutationObserver(() => applyOffset());
+            const ro = new MutationObserver(debounce(() => applyOffset(), 200));
             ro.observe(document.body, { childList: true, subtree: false });
             // Recalcul ponctuel après chargement complet (images/polices peuvent changer la hauteur du header)
             window.addEventListener('load', () => setTimeout(applyOffset, 500));
@@ -5622,8 +5708,10 @@ body::after {
                 }, 5000);
             }
 
-            const observer = new MutationObserver(debounce(() => processTable(), 300));
-            observer.observe(document.body, { childList: true, subtree: true });
+            // Perf : recadré sur main/#content (au lieu de document.body entier,
+            // le plus large et le moins nécessaire des observers) et mutualisé
+            // sur l'observer racine partagé (fcrOnRootMutation).
+            fcrOnRootMutation(debounce(() => processTable(), 300));
             processTable();
         }
 
