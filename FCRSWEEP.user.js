@@ -1336,31 +1336,6 @@ body::after {
             gradAccent:'linear-gradient(90deg, #33b9ff 0%, #7afcff 50%, #aeeaff 100%)',
             gradBtn:'linear-gradient(135deg, #072a4a 0%, #1aa0e8 60%, #33b9ff 100%)',
             animCSS:`
-@keyframes fcr-neonbleu-flicker {
-    0%,100% { text-shadow:0 0 6px #33b9ffcc,0 0 18px #33b9ff66; }
-    20%     { text-shadow:0 0 2px #7afcffcc,0 0 8px #7afcff44; }
-    40%     { text-shadow:0 0 10px #aeeaffcc,0 0 26px #aeeaff55; }
-    60%     { text-shadow:0 0 4px #33b9ffcc,0 0 12px #33b9ff66; }
-    80%     { text-shadow:0 0 8px #7afcffcc,0 0 22px #7afcff55; }
-}
-@keyframes fcr-neonbleu-border {
-    0%,100% { box-shadow:0 0 6px #33b9ff33,inset 0 0 6px #33b9ff11; border-color:#33b9ff44; }
-    33%      { box-shadow:0 0 14px #7afcff55,inset 0 0 10px #7afcff22; border-color:#7afcff66; }
-    66%      { box-shadow:0 0 10px #aeeaff44,inset 0 0 8px #aeeaff22; border-color:#aeeaff55; }
-}
-@keyframes fcr-neonbleu-rain {
-    0%   { transform: translateY(-40px); opacity: 0; }
-    10%  { opacity: 0.7; }
-    100% { transform: translateY(110vh); opacity: 0; }
-}
-@keyframes fcr-neonbleu-glow-pulse {
-    0%,100% { opacity: 0.5; }
-    50%      { opacity: 0.8; }
-}
-@keyframes fcr-neonbleu-bg-shift {
-    0%,100% { background-position: 0% 50%; }
-    50%      { background-position: 100% 50%; }
-}
 body, #side-bar {
     background:
         linear-gradient(180deg, rgba(1,6,12,0.40) 0%, rgba(2,18,36,0.25) 45%, rgba(1,6,12,0.46) 100%),
@@ -1376,32 +1351,20 @@ body::before {
     background: radial-gradient(ellipse at 50% 0%, rgba(51,185,255,0.08) 0%, transparent 60%);
     pointer-events: none;
     z-index: 9994;
-    animation: fcr-neonbleu-glow-pulse 6s ease-in-out infinite;
-}
-body::after {
-    content: '';
-    position: fixed;
-    top: -40px;
-    left: 32%;
-    width: 1px;
-    height: 30px;
-    background: linear-gradient(180deg, transparent, #7afcffaa, transparent);
-    pointer-events: none;
-    z-index: 9997;
-    animation: fcr-neonbleu-rain 1.5s linear infinite;
+    opacity: 0.65;
 }
 #fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel {
-    animation: fcr-neonbleu-border 4s ease-in-out infinite !important;
+    box-shadow:0 0 10px #7afcff44,inset 0 0 8px #7afcff22 !important;
+    border-color:#7afcff55 !important;
     background: rgba(2,18,36,0.82) !important;
     backdrop-filter: blur(2px);
 }
 #hazmat-fcr-header, #fcr-theme-header, #fcr-module-header {
     background: linear-gradient(135deg, #072a4a, #0e5e9e, #1aa0e8, #0e5e9e, #072a4a) !important;
     background-size: 300% 300% !important;
-    animation: fcr-neonbleu-bg-shift 9s ease infinite !important;
 }
 #hazmat-fcr-header-title, #fcr-theme-label, #fcr-module-label {
-    animation: fcr-neonbleu-flicker 6s ease-in-out infinite !important;
+    text-shadow:0 0 6px #33b9ffcc,0 0 18px #33b9ff66 !important;
 }`
         },
     };
