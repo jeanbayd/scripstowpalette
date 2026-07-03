@@ -186,6 +186,38 @@
     // Observe le DOM via MutationObserver, appelle le callback sur chaque nouvel élément trouvé,
     // marque les éléments déjà traités pour éviter les doublons.
     // Si `runOnce` est false (défaut), continue à surveiller après la 1ère occurrence.
+    // Perf : toutes les instances de waitForKeyElements partagent UN SEUL
+    // MutationObserver sur document.body au lieu d'en créer un par appel
+    // (jusqu'à 8 observers redondants auparavant). Comportement identique :
+    // chaque enregistrement garde son propre debounce (150ms) et sa propre
+    // logique runOnce ; seul le "capteur" DOM sous-jacent est mutualisé.
+    let _wfkeListeners = [];
+    let _wfkeSharedObserver = null;
+
+    function _wfkeEnsureSharedObserver() {
+        if (_wfkeSharedObserver) return;
+        _wfkeSharedObserver = new MutationObserver(() => {
+            _wfkeListeners.forEach(entry => {
+                if (entry.wfkePending) return; // ignore si déjà schedulé
+                entry.wfkePending = true;
+                clearTimeout(entry.wfkeTimer);
+                entry.wfkeTimer = setTimeout(() => {
+                    entry.wfkePending = false;
+                    const found = entry.processMatches();
+                    if (found && entry.runOnce) {
+                        _wfkeListeners = _wfkeListeners.filter(e => e !== entry);
+                    }
+                }, 150); // debounce augmenté : 80ms → 150ms
+            });
+        });
+        _wfkeSharedObserver.observe(document.body || document.documentElement, {
+            childList: true,
+            subtree: true,
+            attributes: false,  // on n'a pas besoin des attributs
+            characterData: false // ni du texte
+        });
+    }
+
     function waitForKeyElements(selector, callback, runOnce = false) {
         const seen = new WeakSet();
 
@@ -205,25 +237,8 @@
         const foundImmediately = processMatches();
         if (foundImmediately && runOnce) return;
 
-        let wfkeTimer = null;
-        let wfkePending = false;
-
-        const obs = new MutationObserver(() => {
-            if (wfkePending) return; // ignore si déjà schedulé
-            wfkePending = true;
-            clearTimeout(wfkeTimer);
-            wfkeTimer = setTimeout(() => {
-                wfkePending = false;
-                const found = processMatches();
-                if (found && runOnce) obs.disconnect();
-            }, 150); // debounce augmenté : 80ms → 150ms
-        });
-        obs.observe(document.body || document.documentElement, {
-            childList: true,
-            subtree: true,
-            attributes: false,  // on n'a pas besoin des attributs
-            characterData: false // ni du texte
-        });
+        _wfkeEnsureSharedObserver();
+        _wfkeListeners.push({ processMatches, runOnce, wfkeTimer: null, wfkePending: false });
     }
 
     function debounce(func, delay) {
@@ -2208,8 +2223,12 @@ body::after {
                 });
             }
 
+            // Perf : on scanne uniquement la zone déjà observée (hoverRoot)
+            // au lieu de tout le document à chaque déclenchement.
+            const hoverRoot = document.querySelector('main') || document.querySelector('[role="main"]') || document.querySelector('#content') || document.body;
+
             function addHoverListeners() {
-                const links = document.querySelectorAll('a');
+                const links = hoverRoot.querySelectorAll('a');
                 links.forEach(link => {
                     if (link.hasAttribute('data-image-hover-added')) return;
                     const text = link.textContent.trim();
@@ -2227,7 +2246,6 @@ body::after {
 
             addHoverListeners();
 
-            const hoverRoot = document.querySelector('main') || document.querySelector('[role="main"]') || document.querySelector('#content') || document.body;
             const observer = new MutationObserver(debounce((mutations) => {
                 const hasAdded = mutations.some(m => m.addedNodes.length);
                 if (hasAdded) addHoverListeners();
@@ -5336,18 +5354,24 @@ body::after {
         function initInventoryArrows() {
             if (isEditItemsPage) return;
 
+            // Perf : on garde en cache la table détectée + ses index de colonnes.
+            // Tant qu'elle reste dans le DOM, on évite de rescanner TOUTES les
+            // tables de la page (et leur textContent) à chaque mutation.
+            let _cachedInvTable = null;
+            let _cachedInvCols = null;
+
             function findInventoryTable() {
+                if (_cachedInvTable && document.contains(_cachedInvTable)) return _cachedInvTable;
+                _cachedInvTable = null;
+                _cachedInvCols = null;
                 const tables = document.querySelectorAll('table');
-                console.log('[FCR Quick Status] tables trouvées sur la page:', tables.length);
                 for (const t of tables) {
                     const headerText = (t.querySelector('thead, tr') || {}).textContent || '';
                     if (headerText.includes('Disposition') && headerText.includes('Container')) {
-                        console.log('[FCR Quick Status] table Inventory détectée ✅', t);
+                        _cachedInvTable = t;
                         return t;
                     }
                 }
-                console.log('[FCR Quick Status] aucune table avec "Container" + "Disposition" trouvée. En-têtes vus:',
-                    Array.from(tables).map(t => (t.querySelector('thead, tr') || {}).textContent?.slice(0, 80)));
                 return null;
             }
 
@@ -5364,11 +5388,17 @@ body::after {
                 const table = findInventoryTable();
                 if (!table) return;
 
-                const containerIdx   = getColumnIndex(table, 'Container');
-                const asinIdx        = getColumnIndex(table, 'ASIN');
-                const fcskuIdx       = getColumnIndex(table, 'FCSku');
-                const dispositionIdx = getColumnIndex(table, 'Disposition');
-                console.log('[FCR Quick Status] index colonnes — Container:', containerIdx, 'ASIN:', asinIdx, 'FCSku:', fcskuIdx, 'Disposition:', dispositionIdx);
+                let cols = (table === _cachedInvTable) ? _cachedInvCols : null;
+                if (!cols) {
+                    cols = {
+                        containerIdx:   getColumnIndex(table, 'Container'),
+                        asinIdx:        getColumnIndex(table, 'ASIN'),
+                        fcskuIdx:       getColumnIndex(table, 'FCSku'),
+                        dispositionIdx: getColumnIndex(table, 'Disposition'),
+                    };
+                    _cachedInvCols = cols;
+                }
+                const { containerIdx, asinIdx, fcskuIdx, dispositionIdx } = cols;
                 if (containerIdx === -1 || asinIdx === -1) return;
                 if (fcskuIdx === -1 && dispositionIdx === -1) return;
 
@@ -5384,7 +5414,6 @@ body::after {
 
                 const allRows = table.querySelectorAll('tbody tr, tr');
                 const rows = Array.from(allRows).filter(r => r !== headerRow);
-                console.log('[FCR Quick Status] lignes de données trouvées:', rows.length);
                 rows.forEach(row => {
                     if (row.dataset.fcrStatusArrow) return;
                     const cells = row.querySelectorAll('td');
@@ -5568,10 +5597,12 @@ body::after {
                     };
                     const found = check();
                     if (found) return resolve(found);
-                    const obs = new MutationObserver(() => {
+                    // Perf : debounce 150ms pour éviter un scan complet du DOM
+                    // à chaque mutation individuelle pendant le chargement de la modale.
+                    const obs = new MutationObserver(debounce(() => {
                         const f = check();
                         if (f) { obs.disconnect(); resolve(f); }
-                    });
+                    }, 150));
                     obs.observe(document.body, { childList: true, subtree: true });
                     setTimeout(() => { obs.disconnect(); reject(new Error('timeout: ' + text)); }, timeout);
                 });
