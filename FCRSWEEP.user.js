@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FCR Lite Ultra V4 — SWEEP
-// @version      3.1.3
-// @description  FCR Lite SWEEP — Thèmes, Prep, God Mode Print, Hazmat, Étiquettes, Couleurs, CSV, Weight (sans Bin Check, Floor Finder, Analyse Palette)
+// @version      3.2.0
+// @description  FCR Lite SWEEP — Thèmes, Prep, God Mode Print, Hazmat, Étiquettes, Couleurs, CSV, Weight (sans Bin Check, Floor Finder, Analyse Palette). v3.2.0 : le thème "🌃 Néon Bleu" est fusionné avec le thème cyberpunk "Neo-Tokyo" (Sideline Refonte JB Edition) — palette cyan/magenta, coins chanfreinés, titres façon tube néon scintillant. L'image de fond du thème reste inchangée.
 // @author       @JEANBAYD
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2*
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2/*
@@ -1327,18 +1327,23 @@ body::after {
 }`
         },
         neonbleu: {
-            bg1:'#01060c', bg2:'#021224', bg3:'#072a4a',
-            accent:'#33b9ff', accentDark:'#0e5e9e', label:'🌃 Néon Bleu',
-            prepBg:'#021224', prepNoPrep:'#ffe066', prepYes:'#7afcff',
+            /* Fusionné avec le thème "Neo-Tokyo" (Sideline Refonte JB Edition) :
+               cyberpunk néon bleu/magenta, coins chanfreinés, tubes-néon qui
+               scintillent. L'image de fond reste STRICTEMENT celle d'origine
+               du thème Néon Bleu (même URL Unsplash, non remplacée). */
+            bg1:'#05040d', bg2:'#0a0a1a', bg3:'#0b0e22',
+            accent:'#21e6ff', accentDark:'#1177a3', label:'🌃 Néon Bleu',
+            prepBg:'#0a0a1a', prepNoPrep:'#ffb020', prepYes:'#21e6ff',
             isGradient:true, isAnimated:true,
-            gradHeader:'linear-gradient(135deg, #072a4a 0%, #0e5e9e 45%, #1aa0e8 100%)',
-            gradPanel:'linear-gradient(160deg, #01060c 0%, #021224 55%, #01060c 100%)',
-            gradAccent:'linear-gradient(90deg, #33b9ff 0%, #7afcff 50%, #aeeaff 100%)',
-            gradBtn:'linear-gradient(135deg, #072a4a 0%, #1aa0e8 60%, #33b9ff 100%)',
+            gradHeader:'linear-gradient(135deg, #0b0e22 0%, #7a1a5e 35%, #1177a3 70%, #21e6ff 100%)',
+            gradPanel:'linear-gradient(160deg, #05040d 0%, #0b0e22 55%, #05040d 100%)',
+            gradAccent:'linear-gradient(90deg, #21e6ff 0%, #ff2ea6 50%, #9df6ff 100%)',
+            gradBtn:'linear-gradient(135deg, #0b0e22 0%, #1177a3 60%, #21e6ff 100%)',
             animCSS:`
+/* ── image de fond d'origine "Néon Bleu", inchangée ── */
 body, #side-bar {
     background:
-        linear-gradient(180deg, rgba(1,6,12,0.40) 0%, rgba(2,18,36,0.25) 45%, rgba(1,6,12,0.46) 100%),
+        linear-gradient(180deg, rgba(5,4,13,0.42) 0%, rgba(10,10,26,0.26) 45%, rgba(5,4,13,0.48) 100%),
         url('https://images.unsplash.com/photo-1760016145562-aa96971749b0?fm=jpg&q=80&w=2000&auto=format&fit=crop')
         center / cover no-repeat fixed !important;
     position: relative !important;
@@ -1348,24 +1353,64 @@ body::before {
     content: '';
     position: fixed;
     inset: 0;
-    background: radial-gradient(ellipse at 50% 0%, rgba(51,185,255,0.08) 0%, transparent 60%);
+    background:
+        radial-gradient(ellipse 900px 500px at 12% -6%, rgba(33,230,255,0.10) 0%, transparent 60%),
+        radial-gradient(ellipse 700px 460px at 104% 8%, rgba(255,46,166,0.09) 0%, transparent 55%);
     pointer-events: none;
     z-index: 9994;
-    opacity: 0.65;
+    opacity: 0.85;
 }
+/* Coins chanfreinés cyberpunk sur les panneaux FCR (thème/module/hazmat) */
 #fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel {
-    box-shadow:0 0 10px #7afcff44,inset 0 0 8px #7afcff22 !important;
-    border-color:#7afcff55 !important;
-    background: rgba(2,18,36,0.82) !important;
+    box-shadow:0 0 10px #21e6ff44,inset 0 0 8px #21e6ff1f !important;
+    border-color:#21e6ff55 !important;
+    background: rgba(10,10,26,0.85) !important;
     backdrop-filter: blur(2px);
+    clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
 }
 #hazmat-fcr-header, #fcr-theme-header, #fcr-module-header {
-    background: linear-gradient(135deg, #072a4a, #0e5e9e, #1aa0e8, #0e5e9e, #072a4a) !important;
-    background-size: 300% 300% !important;
+    background: linear-gradient(135deg, #0b0e22, #7a1a5e, #1177a3, #21e6ff, #1177a3, #7a1a5e, #0b0e22) !important;
+    background-size: 400% 400% !important;
+    animation: fcr-neonbleu-bg-shift 10s ease infinite !important;
 }
+@keyframes fcr-neonbleu-bg-shift {
+    0%,100% { background-position: 0% 50%; }
+    50%      { background-position: 100% 50%; }
+}
+/* Titres = tubes néon : scintillement discret façon enseigne, pas de clignotement franc */
 #hazmat-fcr-header-title, #fcr-theme-label, #fcr-module-label {
-    text-shadow:0 0 6px #33b9ffcc,0 0 18px #33b9ff66 !important;
-}`
+    text-shadow:0 0 3px #eafcffcc, 0 0 8px #21e6ffcc, 0 0 20px #21e6ff66 !important;
+    animation: fcr-neonbleu-sign 6s infinite !important;
+}
+@keyframes fcr-neonbleu-sign {
+    0%, 100% { opacity: 1; }
+    41% { opacity: 1; }
+    42% { opacity: 0.45; }
+    43% { opacity: 1; }
+    78% { opacity: 1; }
+    79% { opacity: 0.55; }
+    80% { opacity: 1; }
+}
+/* Boutons God Mode / Weight / CSV / LoadPrep : coins chanfreinés + liseré magenta au survol */
+#manualAsinProfilerButton, #rnoSizeProfilerButton,
+#hazmatLevelButton, #weightButton, #csvExportButton,
+#csvHistoryButton, .LoadPrep-button, .fcr-print-btn,
+.fcr-theme-btn, #fcr-freeprint-print, .barcode-close {
+    clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px) !important;
+}
+#weightButton:hover, .LoadPrep-button:hover, #csvExportButton:hover, #csvHistoryButton:hover,
+.fcr-print-btn:hover {
+    box-shadow: 0 0 6px #ff2ea666, 0 0 14px #21e6ff88 !important;
+}
+/* Coins de visée HUD façon Neo-Tokyo sur le panneau Hazmat */
+#hazmat-fcr-panel { position: relative; }
+#hazmat-fcr-panel::before, #hazmat-fcr-panel::after {
+    content: '';
+    position: absolute; width: 12px; height: 12px;
+    pointer-events: none; opacity: 0.85;
+}
+#hazmat-fcr-panel::before { top: -1px; left: -1px; border-top: 2px solid #ff2ea6; border-left: 2px solid #ff2ea6; }
+#hazmat-fcr-panel::after  { bottom: -1px; right: -1px; border-bottom: 2px solid #21e6ff; border-right: 2px solid #21e6ff; }`
         },
     };
 
@@ -1451,6 +1496,7 @@ body::before {
             #fcr-theme-btn-sakura   { background:${THEMES.sakura.gradBtn}; color:#ffe4ec; border-color:${THEMES.sakura.accent}; text-shadow:0 1px 2px rgba(0,0,0,0.5); }
         #fcr-theme-btn-void_theme { background:${THEMES.void_theme.gradBtn}; color:#00ff88; border-color:${THEMES.void_theme.accent}; text-shadow:0 0 6px #00ff88aa; }
             #fcr-theme-btn-phantominion { background:${THEMES.phantominion.gradBtn}; color:#e0aaff; border-color:${THEMES.phantominion.accent}; text-shadow:0 0 6px #c77dffaa; }
+            #fcr-theme-btn-neonbleu { background:${THEMES.neonbleu.gradBtn}; color:#eafcff; border-color:${THEMES.neonbleu.accent}; text-shadow:0 0 4px #eafcffcc, 0 0 10px #ff2ea699; }
             #fcr-module-panel { background:#f0f0f0; border-bottom:2px solid #ccc; overflow:hidden; }
             #fcr-module-header { display:flex; align-items:center; justify-content:space-between; padding:7px 10px; cursor:pointer; border-bottom:1px solid #ccc; user-select:none; }
             #fcr-module-header:hover { background:#e0e0e0; }
@@ -1612,6 +1658,7 @@ body::before {
         #fcr-theme-btn-ophe { background:${THEMES.ophe.gradBtn}; color:#f9a8d4; border-color:${THEMES.ophe.accent}; text-shadow:0 0 6px #f9a8d4aa; }
         #fcr-theme-btn-safari { background:${THEMES.safari.gradBtn}; color:#ffbb44; border-color:${THEMES.safari.accent}; text-shadow:0 0 6px #ffbb44aa; }
         #fcr-theme-btn-phantominion { background:${THEMES.phantominion.gradBtn}; color:#e0aaff; border-color:${THEMES.phantominion.accent}; text-shadow:0 0 6px #c77dffaa; }
+        #fcr-theme-btn-neonbleu { background:${THEMES.neonbleu.gradBtn}; color:#eafcff; border-color:${THEMES.neonbleu.accent}; text-shadow:0 0 4px #eafcffcc, 0 0 10px #ff2ea699; }
         /* Module panel theming — suit désormais le thème actif */
         #fcr-module-panel { border-bottom:2px solid ${t.accentDark}; background:${panelBg}; overflow:hidden; }
         #fcr-module-header { display:flex; align-items:center; justify-content:space-between; padding:7px 10px; cursor:pointer; border-bottom:1px solid ${t.accentDark}; user-select:none; transition:background 0.2s; }
