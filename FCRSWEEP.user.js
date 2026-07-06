@@ -1415,6 +1415,8 @@ body, body * {
 @media (prefers-reduced-motion: reduce) {
     #hazmat-fcr-header-title, #fcr-theme-label, #fcr-module-label,
     #fcr-neon-logo-sign { animation: none !important; }
+    body::after { animation: none !important; }
+    #hazmat-fcr-header-title:hover, #fcr-theme-label:hover, #fcr-module-label:hover { animation: none !important; }
 }
 
 /* ================= ENSEIGNE NÉON DU LOGO "FCResearch ETZ2" =================
@@ -1544,7 +1546,90 @@ body, body * {
     pointer-events: none; opacity: 0.85;
 }
 #hazmat-fcr-panel::before { top: -1px; left: -1px; border-top: 2px solid #ff2ea6; border-left: 2px solid #ff2ea6; }
-#hazmat-fcr-panel::after  { bottom: -1px; right: -1px; border-bottom: 2px solid #21e6ff; border-right: 2px solid #21e6ff; }`
+#hazmat-fcr-panel::after  { bottom: -1px; right: -1px; border-bottom: 2px solid #21e6ff; border-right: 2px solid #21e6ff; }
+/* ================= SCANLINES CRT =================
+   Fin voile de lignes horizontales façon écran cathodique, très subtil,
+   qui dérive lentement vers le bas. N'intercepte aucun clic (pointer-events:none). */
+body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        rgba(0,0,0,0) 0px,
+        rgba(0,0,0,0) 2px,
+        rgba(33,230,255,0.035) 3px,
+        rgba(0,0,0,0) 4px
+    );
+    background-size: 100% 4px;
+    pointer-events: none;
+    z-index: 9995;
+    mix-blend-mode: overlay;
+    animation: fcr-neonbleu-scanline-drift 8s linear infinite;
+}
+@keyframes fcr-neonbleu-scanline-drift {
+    0%   { background-position: 0 0; }
+    100% { background-position: 0 40px; }
+}
+/* ================= SCROLLBAR NÉON =================
+   Ascenseur fin avec tube cyan lumineux, plus intense au survol. */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: #05040d; }
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #21e6ff, #1177a3);
+    border-radius: 6px;
+    border: 2px solid #05040d;
+    box-shadow: 0 0 6px #21e6ffaa, 0 0 14px #21e6ff55;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #7afcff, #21e6ff);
+    box-shadow: 0 0 10px #21e6ffdd, 0 0 20px #ff2ea655;
+}
+::-webkit-scrollbar-corner { background: #05040d; }
+/* Firefox */
+* { scrollbar-color: #21e6ff #05040d; scrollbar-width: thin; }
+/* ================= SÉLECTION DE TEXTE =================
+   Surlignage cyan translucide au lieu du bleu par défaut du navigateur. */
+::selection {
+    background: rgba(33,230,255,0.35);
+    color: #eafcff;
+    text-shadow: 0 0 6px #21e6ff;
+}
+::-moz-selection {
+    background: rgba(33,230,255,0.35);
+    color: #eafcff;
+    text-shadow: 0 0 6px #21e6ff;
+}
+/* ================= FOCUS DES CHAMPS =================
+   Halo cyan net au focus clavier/souris sur inputs, textarea, select. */
+input:focus, textarea:focus, select:focus {
+    outline: none !important;
+    border-color: #21e6ff !important;
+    box-shadow: 0 0 6px #21e6ffaa, 0 0 14px #21e6ff55, inset 0 0 6px #21e6ff22 !important;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+/* ================= SURVOL DES LIGNES DE TABLEAU =================
+   Léger glow cyan sur la ligne survolée pour un meilleur feedback visuel. */
+table tr:hover td, table tr:hover th {
+    background: rgba(33,230,255,0.06) !important;
+    box-shadow: inset 0 0 8px rgba(33,230,255,0.15);
+    transition: background 0.15s ease;
+}
+/* ================= GLITCH AU SURVOL DU GROS TITRE =================
+   Bref décalage chromatique cyan/magenta façon glitch cyberpunk quand on
+   passe la souris sur le titre du panneau ou l'enseigne — reste discret
+   (0.4s) pour ne pas fatiguer l'œil sur un outil de travail. */
+#hazmat-fcr-header-title:hover, #fcr-theme-label:hover, #fcr-module-label:hover {
+    animation: fcr-neonbleu-glitch 0.4s steps(2, end) !important;
+}
+@keyframes fcr-neonbleu-glitch {
+    0%   { text-shadow:0 0 2px #eafcff,0 0 6px #eafcff,0 0 14px #21e6ff,0 0 26px #21e6ff; transform: translate(0,0); }
+    20%  { text-shadow:-2px 0 #ff2ea6, 2px 0 #21e6ff, 0 0 14px #21e6ff; transform: translate(-1px,0); }
+    40%  { text-shadow:2px 0 #ff2ea6, -2px 0 #21e6ff, 0 0 14px #21e6ff; transform: translate(1px,0); }
+    60%  { text-shadow:-1px 0 #ff2ea6, 1px 0 #21e6ff, 0 0 14px #21e6ff; transform: translate(-1px,0); }
+    80%  { text-shadow:1px 0 #ff2ea6, -1px 0 #21e6ff, 0 0 14px #21e6ff; transform: translate(1px,0); }
+    100% { text-shadow:0 0 2px #eafcff,0 0 6px #eafcff,0 0 14px #21e6ff,0 0 26px #21e6ff; transform: translate(0,0); }
+}`
         },
     };
 
