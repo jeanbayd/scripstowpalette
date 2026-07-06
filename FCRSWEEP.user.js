@@ -1377,19 +1377,153 @@ body::before {
     0%,100% { background-position: 0% 50%; }
     50%      { background-position: 100% 50%; }
 }
-/* Titres = tubes néon : scintillement discret façon enseigne, pas de clignotement franc */
+/* Typographie "Sideline Neo-Tokyo" reprise à l'identique pour TOUT le thème
+   Néon Bleu (pas seulement les panneaux FCR) : police monospace partout. */
+body, body * {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Courier New', monospace !important;
+}
 #hazmat-fcr-header-title, #fcr-theme-label, #fcr-module-label {
-    text-shadow:0 0 3px #eafcffcc, 0 0 8px #21e6ffcc, 0 0 20px #21e6ff66 !important;
+    color: #eafcff !important;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    text-shadow:
+        0 0 2px #eafcff,
+        0 0 6px #eafcff,
+        0 0 14px #21e6ff,
+        0 0 26px #21e6ff,
+        0 0 48px rgba(33,230,255,0.55),
+        0 0 90px rgba(33,230,255,0.25) !important;
     animation: fcr-neonbleu-sign 6s infinite !important;
 }
+/* scintillement de tube néon identique à Sideline : reste allumé, deux courtes
+   baisses d'intensité imprévisibles (pas de clignotement on/off franc) */
 @keyframes fcr-neonbleu-sign {
     0%, 100% { opacity: 1; }
     41% { opacity: 1; }
-    42% { opacity: 0.45; }
+    42% { opacity: 0.4; }
     43% { opacity: 1; }
+    44% { opacity: 0.7; }
+    45% { opacity: 1; }
     78% { opacity: 1; }
-    79% { opacity: 0.55; }
+    79% { opacity: 0.5; }
     80% { opacity: 1; }
+}
+/* ================= SCINTILLEMENT — réservé au GROS TITRE + à l'enseigne =================
+   Sur demande : plus aucun autre élément du thème (boutons, tableaux, tags,
+   liens…) ne scintille. Seuls le gros titre des panneaux et l'enseigne
+   lumineuse "FC Research" gardent l'animation de tube néon. */
+@media (prefers-reduced-motion: reduce) {
+    #hazmat-fcr-header-title, #fcr-theme-label, #fcr-module-label,
+    #fcr-neon-logo-sign { animation: none !important; }
+}
+
+/* ================= ENSEIGNE NÉON DU LOGO "FCResearch ETZ2" =================
+   Style enseigne de ruelle tokyoïte : caisson à double tube (cyan + magenta),
+   sous-titre en katakana, petit tampon "hanko" en kanji au coin — et TOUTE
+   l'enseigne clignote D'UN SEUL BLOC (une seule animation posée sur le
+   conteneur, qui fait varier l'opacité de l'ensemble en même temps).
+   Remplace visuellement le logo noir d'origine, posé PAR-DESSUS l'élément
+   d'origine (celui-ci est juste rendu invisible via visibility:hidden — il
+   garde sa taille/sa place et reste cliquable si c'était un lien). */
+#fcr-neon-logo-sign {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    visibility: visible !important;
+    pointer-events: none;
+    white-space: nowrap;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Courier New', monospace !important;
+    z-index: 5;
+    animation: fcr-neonbleu-sign 6s infinite; /* toute l'enseigne scintille en bloc */
+}
+/* Caisson de l'enseigne : cadre chanfreiné à double tube (cyan extérieur + magenta intérieur), fond vitrine nocturne */
+#fcr-neon-logo-sign .fcr-neon-logo-frame {
+    position: relative;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    line-height: 1.1;
+    padding: 6px 18px 6px 13px;
+    background: linear-gradient(160deg, rgba(6,5,16,0.78) 0%, rgba(11,14,34,0.64) 100%);
+    border: 1.5px solid #21e6ff;
+    box-shadow:
+        0 0 6px #21e6ffaa, 0 0 16px #21e6ff55, 0 0 34px #21e6ff33,
+        inset 0 0 10px #21e6ff22;
+    clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+}
+/* Tube intérieur magenta, en retrait — effet "double néon" des vraies enseignes en verre */
+#fcr-neon-logo-sign .fcr-neon-logo-frame::before {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    border: 1px solid #ff2ea6;
+    opacity: 0.5;
+    clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px);
+    pointer-events: none;
+}
+/* Tampon "hanko" en kanji au coin du caisson : 研 (recherche / étude) */
+#fcr-neon-logo-sign .fcr-neon-logo-frame::after {
+    content: '研';
+    position: absolute;
+    top: -8px; right: -8px;
+    width: 16px; height: 16px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; font-weight: 900;
+    color: #fff0f2;
+    background: #c81e4d;
+    border-radius: 50%;
+    box-shadow: 0 0 4px #ff2ea6aa, 0 0 10px #ff2ea666;
+    transform: rotate(8deg);
+}
+#fcr-neon-logo-sign .fcr-neon-logo-main {
+    font-weight: 800;
+    font-size: 21px;
+    letter-spacing: 0.5px;
+}
+/* "FC" — tube cyan */
+#fcr-neon-logo-sign .fcr-neon-logo-fc {
+    color: #eafcff;
+    text-shadow:
+        0 0 2px #eafcff, 0 0 6px #eafcff,
+        0 0 14px #21e6ff, 0 0 26px #21e6ff,
+        0 0 48px rgba(33,230,255,0.55);
+}
+/* "Research" — tube magenta, légèrement plus fin */
+#fcr-neon-logo-sign .fcr-neon-logo-research {
+    font-weight: 600;
+    color: #ffd6f0;
+    text-shadow:
+        0 0 2px #ffe9f6, 0 0 6px #ff6fc4,
+        0 0 14px #ff2ea6, 0 0 28px rgba(255,46,166,0.5);
+}
+/* Séparateur pointillé avant le sous-titre, façon nameplate d'enseigne */
+#fcr-neon-logo-sign .fcr-neon-logo-kana {
+    margin-top: 3px;
+    padding-top: 2px;
+    border-top: 1px dashed rgba(255,176,32,0.4);
+    width: 100%;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: #ffe4b0;
+    text-shadow: 0 0 2px #ffe4b0, 0 0 8px #ffb020, 0 0 18px rgba(255,176,32,0.5);
+}
+/* Badge "ETZ2" — petit panonceau incliné accroché au caisson, façon étiquette suspendue */
+#fcr-neon-logo-sign .fcr-neon-logo-tag {
+    align-self: flex-start;
+    margin-top: -2px;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: #21e6ff;
+    border: 1px solid #21e6ff88;
+    border-radius: 2px;
+    transform: rotate(-6deg);
+    background: rgba(33,230,255,0.06);
+    text-shadow: 0 0 3px #21e6ff, 0 0 10px #21e6ff88;
 }
 /* Boutons God Mode / Weight / CSV / LoadPrep : coins chanfreinés + liseré magenta au survol */
 #manualAsinProfilerButton, #rnoSizeProfilerButton,
@@ -1457,6 +1591,185 @@ body::before {
         const b = parseInt(hex.slice(5,7), 16);
         return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  FAB DÉPLAÇABLES (Problems, Edit Item, Move Item, Étiquettes)
+    // ════════════════════════════════════════════════════════════════
+    // Chaque FAB garde sa position actuelle (bottom/right codés en dur
+    // dans le script) comme emplacement PAR DÉFAUT. On peut ensuite le
+    // faire glisser n'importe où à l'écran ; sa nouvelle position est
+    // mémorisée (par FAB) et restaurée aux prochains chargements. Un
+    // simple clic (sans déplacement) continue d'ouvrir/fermer son panneau.
+    function makeFcrFabDraggable(fab, storageKey) {
+        fab.classList.add('fcr-fab-draggable');
+        fab.style.touchAction = 'none';
+
+        // Position sauvegardée par l'utilisateur : on l'applique par-dessus
+        // la position par défaut déjà posée en inline style par le script.
+        const saved = GM_getValue('fcrFabPos_' + storageKey, null);
+        if (saved && typeof saved.top === 'number' && typeof saved.left === 'number') {
+            fab.style.top = saved.top + 'px';
+            fab.style.left = saved.left + 'px';
+            fab.style.bottom = '';
+            fab.style.right = '';
+        }
+
+        let dragging = false, moved = false, startX = 0, startY = 0, startTop = 0, startLeft = 0;
+
+        fab.addEventListener('pointerdown', (e) => {
+            if (e.button !== undefined && e.button !== 0) return;
+            dragging = true;
+            moved = false;
+            const rect = fab.getBoundingClientRect();
+            startX = e.clientX; startY = e.clientY;
+            startTop = rect.top; startLeft = rect.left;
+            try { fab.setPointerCapture(e.pointerId); } catch (err) {}
+        });
+
+        fab.addEventListener('pointermove', (e) => {
+            if (!dragging) return;
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            if (!moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) moved = true;
+            if (!moved) return;
+            const maxTop  = window.innerHeight - fab.offsetHeight - 4;
+            const maxLeft = window.innerWidth  - fab.offsetWidth  - 4;
+            const newTop  = Math.max(4, Math.min(startTop + dy, maxTop));
+            const newLeft = Math.max(4, Math.min(startLeft + dx, maxLeft));
+            fab.style.top = newTop + 'px';
+            fab.style.left = newLeft + 'px';
+            fab.style.bottom = '';
+            fab.style.right = '';
+        });
+
+        function endDrag(e) {
+            if (!dragging) return;
+            dragging = false;
+            if (moved) {
+                const rect = fab.getBoundingClientRect();
+                GM_setValue('fcrFabPos_' + storageKey, { top: rect.top, left: rect.left });
+                fab._fcrJustDragged = true; // évite que le clic qui suit rouvre/ferme le panneau
+            }
+        }
+        fab.addEventListener('pointerup', endDrag);
+        fab.addEventListener('pointercancel', endDrag);
+    }
+
+    // Un seul écouteur global, posé en phase de capture : il s'exécute avant
+    // le handler "click" (toggle panneau) attaché sur chaque FAB, quel que
+    // soit l'ordre d'attache, et avale le clic qui suit un vrai déplacement.
+    document.addEventListener('click', (e) => {
+        const fab = e.target.closest && e.target.closest('.fcr-fab-draggable');
+        if (fab && fab._fcrJustDragged) {
+            fab._fcrJustDragged = false;
+            e.stopPropagation();
+            e.preventDefault();
+        }
+    }, true);
+
+
+    // ════════════════════════════════════════════════════════════════
+    //  ENSEIGNE NÉON DU LOGO "FCResearch ETZ2" — thème Néon Bleu
+    // ════════════════════════════════════════════════════════════════
+    // Le logo noir "FCResearch" (+ "ETZ2" en exposant) appartient à la
+    // page d'origine, pas au script : sa structure exacte peut varier
+    // d'un environnement à l'autre (FCResearch EU/NA, Sherlock, etc.).
+    // Pour rester robuste, on tente d'abord un sélecteur connu, puis on
+    // retombe sur une recherche par contenu texte limitée au coin
+    // supérieur gauche de la page (là où vit toujours ce logo).
+    //
+    // Si l'auto-détection ne trouve rien sur votre page, ouvrez la
+    // console (F12) : un message "[FCR Neon Logo] ..." indique l'échec.
+    // Dans ce cas, faites un clic droit → Inspecter sur le logo noir,
+    // et renseignez ici le sélecteur exact (id ou classe) pour le
+    // forcer manuellement :
+    const FCR_LOGO_SELECTOR = ''; // ex: '#fc-research-logo' — laissez vide pour l'auto-détection
+
+    function findFcrLogoTarget() {
+        if (FCR_LOGO_SELECTOR) {
+            const forced = document.querySelector(FCR_LOGO_SELECTOR);
+            if (forced) return forced;
+            console.warn('[FCR Neon Logo] FCR_LOGO_SELECTOR défini mais introuvable sur cette page :', FCR_LOGO_SELECTOR);
+        }
+
+        const known = document.getElementById('fc-research-logo');
+        if (known) return known;
+
+        // Recherche par texte, restreinte au coin supérieur gauche (bandeau du haut)
+        let best = null;
+        const all = document.querySelectorAll('body *');
+        for (const el of all) {
+            if (el.id === 'fcr-neon-logo-sign' || el.closest('#fcr-neon-logo-sign')) continue;
+            if (!el.textContent) continue;
+            const txt = el.textContent.replace(/\s+/g, '');
+            if (!/^FCResearch/i.test(txt)) continue;
+            if (txt.length > 20) continue; // évite un conteneur trop large (toute la page, etc.)
+            const rect = el.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) continue;
+            if (rect.top > 140 || rect.left > 600) continue; // le logo vit en haut à gauche
+            if (!best || el.children.length < best.children.length) best = el;
+        }
+        if (!best) console.warn('[FCR Neon Logo] Logo "FCResearch" introuvable automatiquement. Renseignez FCR_LOGO_SELECTOR dans le script.');
+        return best;
+    }
+
+    function injectFcrNeonLogo() {
+        let sign = document.getElementById('fcr-neon-logo-sign');
+        const currentTarget = sign ? sign.parentElement : null;
+        if (sign && currentTarget && currentTarget.isConnected) return; // déjà posée et toujours dans le DOM
+
+        if (sign) sign.remove(); // l'ancien parent a disparu (re-render de page) : on nettoie
+
+        const target = findFcrLogoTarget();
+        if (!target) return;
+
+        if (target.dataset.fcrNeonOrigPosition === undefined) {
+            target.dataset.fcrNeonOrigPosition = target.style.position || '';
+        }
+        if (getComputedStyle(target).position === 'static') {
+            target.style.position = 'relative';
+        }
+        if (target.dataset.fcrNeonOrigOverflow === undefined) {
+            target.dataset.fcrNeonOrigOverflow = target.style.overflow || '';
+        }
+        target.style.overflow = 'visible';
+
+        // On masque le texte d'origine (garde la place, garde un éventuel lien cliquable)
+        target.style.setProperty('visibility', 'hidden', 'important');
+
+        sign = document.createElement('div');
+        sign.id = 'fcr-neon-logo-sign';
+        sign.innerHTML =
+            '<div class="fcr-neon-logo-frame">' +
+                '<span class="fcr-neon-logo-main"><span class="fcr-neon-logo-fc">FC</span><span class="fcr-neon-logo-research">Research</span></span>' +
+                '<span class="fcr-neon-logo-kana">エフシー・リサーチ</span>' +
+            '</div>' +
+            '<span class="fcr-neon-logo-tag">ETZ2</span>';
+        target.appendChild(sign);
+    }
+
+    function removeFcrNeonLogo() {
+        const sign = document.getElementById('fcr-neon-logo-sign');
+        if (!sign) return;
+        const target = sign.parentElement;
+        sign.remove();
+        if (!target) return;
+        target.style.removeProperty('visibility');
+        if (target.dataset.fcrNeonOrigPosition !== undefined) {
+            target.style.position = target.dataset.fcrNeonOrigPosition;
+            delete target.dataset.fcrNeonOrigPosition;
+        }
+        if (target.dataset.fcrNeonOrigOverflow !== undefined) {
+            target.style.overflow = target.dataset.fcrNeonOrigOverflow;
+            delete target.dataset.fcrNeonOrigOverflow;
+        }
+    }
+
+    // Auto-réparation légère : si la page re-rend son bandeau (SPA), on
+    // repose l'enseigne tant que le thème Néon Bleu est actif.
+    setInterval(() => {
+        if (currentTheme === 'neonbleu') injectFcrNeonLogo();
+    }, 2000);
 
     function applyTheme(themeName) {
         const t = THEMES[themeName] || THEMES.bleu;
@@ -1932,6 +2245,13 @@ body::before {
             butterfly2.textContent = '🦋';
             butterfly2.style.cssText = 'top:65%; left:75%; font-size:16px; z-index:9996; animation: fcr-ophe-float 5.5s ease-in-out 2s infinite; filter: drop-shadow(0 0 4px #fcd5e888); opacity:0.65;';
             document.body.appendChild(butterfly2);
+        }
+
+        // ── Enseigne néon du logo "FCResearch ETZ2" (thème NÉON BLEU uniquement) ──
+        if (themeName === 'neonbleu') {
+            injectFcrNeonLogo();
+        } else {
+            removeFcrNeonLogo();
         }
     }
 
@@ -4465,6 +4785,7 @@ body::before {
             fab.addEventListener('mouseenter', () => { fab.style.transform = 'scale(1.12)'; });
             fab.addEventListener('mouseleave', () => { fab.style.transform = 'scale(1)'; });
             document.body.appendChild(fab);
+            makeFcrFabDraggable(fab, 'problem');
 
             // ── Panneau ──
             const panel = document.createElement('div');
@@ -4904,6 +5225,7 @@ body::before {
         fab.addEventListener('mouseleave', () => { fab.style.transform='scale(1)'; });
         fab.addEventListener('click', etiq2_toggle);
         document.body.appendChild(fab);
+        makeFcrFabDraggable(fab, 'etiquettes');
 
         // ── Panneau ──────────────────────────────────────────────────
         const panel = document.createElement('div');
@@ -5986,6 +6308,7 @@ body::before {
             fab.addEventListener('mouseleave', () => { fab.style.transform = 'scale(1)'; });
             fab.addEventListener('click', toggle);
             document.body.appendChild(fab);
+            makeFcrFabDraggable(fab, 'edititems');
 
             // ── Panneau ──────────────────────────────────────────────
             const panel = document.createElement('div');
@@ -6133,6 +6456,7 @@ body::before {
             fab.addEventListener('mouseleave', () => { fab.style.transform = 'scale(1)'; });
             fab.addEventListener('click', toggle);
             document.body.appendChild(fab);
+            makeFcrFabDraggable(fab, 'moveitems');
 
             // ── Panneau ──────────────────────────────────────────────
             const panel = document.createElement('div');
