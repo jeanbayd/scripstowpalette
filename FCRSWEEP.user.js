@@ -1417,6 +1417,9 @@ body, body * {
     #fcr-neon-logo-sign { animation: none !important; }
     body::after { animation: none !important; }
     #hazmat-fcr-header-title:hover, #fcr-theme-label:hover, #fcr-module-label:hover { animation: none !important; }
+    #hazmat-fcr-header-title::before, #fcr-theme-label::before, #fcr-module-label::before { animation: none !important; }
+    #fcr-neonbleu-clock { animation: none !important; }
+    #fcr-neonbleu-clock .fcr-clock-colon { animation: none !important; }
 }
 
 /* ================= ENSEIGNE NÉON DU LOGO "FCResearch ETZ2" =================
@@ -1538,15 +1541,17 @@ body, body * {
 .fcr-print-btn:hover {
     box-shadow: 0 0 6px #ff2ea666, 0 0 14px #21e6ff88 !important;
 }
-/* Coins de visée HUD façon Neo-Tokyo sur le panneau Hazmat */
-#hazmat-fcr-panel { position: relative; }
+/* Coins de visée HUD façon Neo-Tokyo, sur les 3 panneaux FCR (thème/module/hazmat) */
+#fcr-theme-panel, #fcr-module-panel, #hazmat-fcr-panel { position: relative; }
+#fcr-theme-panel::before, #fcr-theme-panel::after,
+#fcr-module-panel::before, #fcr-module-panel::after,
 #hazmat-fcr-panel::before, #hazmat-fcr-panel::after {
     content: '';
     position: absolute; width: 12px; height: 12px;
     pointer-events: none; opacity: 0.85;
 }
-#hazmat-fcr-panel::before { top: -1px; left: -1px; border-top: 2px solid #ff2ea6; border-left: 2px solid #ff2ea6; }
-#hazmat-fcr-panel::after  { bottom: -1px; right: -1px; border-bottom: 2px solid #21e6ff; border-right: 2px solid #21e6ff; }
+#fcr-theme-panel::before, #fcr-module-panel::before, #hazmat-fcr-panel::before { top: -1px; left: -1px; border-top: 2px solid #ff2ea6; border-left: 2px solid #ff2ea6; }
+#fcr-theme-panel::after,  #fcr-module-panel::after,  #hazmat-fcr-panel::after  { bottom: -1px; right: -1px; border-bottom: 2px solid #21e6ff; border-right: 2px solid #21e6ff; }
 /* ================= SCANLINES CRT =================
    Fin voile de lignes horizontales façon écran cathodique, très subtil,
    qui dérive lentement vers le bas. N'intercepte aucun clic (pointer-events:none). */
@@ -1629,6 +1634,102 @@ table tr:hover td, table tr:hover th {
     60%  { text-shadow:-1px 0 #ff2ea6, 1px 0 #21e6ff, 0 0 14px #21e6ff; transform: translate(-1px,0); }
     80%  { text-shadow:1px 0 #ff2ea6, -1px 0 #21e6ff, 0 0 14px #21e6ff; transform: translate(1px,0); }
     100% { text-shadow:0 0 2px #eafcff,0 0 6px #eafcff,0 0 14px #21e6ff,0 0 26px #21e6ff; transform: translate(0,0); }
+}
+/* ================= BADGE DE STATUT LUMINEUX =================
+   Petit voyant rond pulsant devant les gros titres, façon "système en
+   ligne" d'un panneau de contrôle. Purement décoratif (pas lié à un état
+   réel du script). */
+#hazmat-fcr-header-title::before, #fcr-theme-label::before, #fcr-module-label::before {
+    content: '';
+    display: inline-block;
+    width: 7px; height: 7px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: #3dffb0;
+    box-shadow: 0 0 4px #3dffb0, 0 0 10px #3dffb0aa, 0 0 18px #3dffb066;
+    vertical-align: middle;
+    animation: fcr-neonbleu-status-pulse 2.4s ease-in-out infinite;
+}
+@keyframes fcr-neonbleu-status-pulse {
+    0%, 100% { opacity: 1;    transform: scale(1); }
+    50%      { opacity: 0.55; transform: scale(0.82); }
+}
+/* ================= ICÔNES EN NÉON =================
+   Halo cyan/magenta sur les boutons (englobe tout leur contenu, y compris
+   les glyphes/emoji utilisés comme icônes), plus intense au survol. */
+#manualAsinProfilerButton, #rnoSizeProfilerButton,
+#hazmatLevelButton, #weightButton, #csvExportButton,
+#csvHistoryButton, .LoadPrep-button, .fcr-print-btn,
+.fcr-theme-btn, #fcr-freeprint-print, .barcode-close {
+    filter: drop-shadow(0 0 3px #21e6ffaa) drop-shadow(0 0 7px #21e6ff55);
+    transition: filter 0.2s ease;
+}
+#manualAsinProfilerButton:hover, #rnoSizeProfilerButton:hover,
+#hazmatLevelButton:hover, #weightButton:hover, #csvExportButton:hover,
+#csvHistoryButton:hover, .LoadPrep-button:hover, .fcr-print-btn:hover,
+.fcr-theme-btn:hover, #fcr-freeprint-print:hover, .barcode-close:hover {
+    filter: drop-shadow(0 0 5px #21e6ffdd) drop-shadow(0 0 12px #ff2ea688);
+}
+/* Même halo néon sur les FAB (pastilles rondes Problems/Edit/Move/Étiquettes)
+   et sur leur petite pastille de verrouillage. */
+.fcr-fab-draggable {
+    filter: drop-shadow(0 0 4px #21e6ffcc) drop-shadow(0 0 10px rgba(33,230,255,0.6));
+}
+.fcr-fab-draggable:hover {
+    filter: drop-shadow(0 0 6px #21e6ffee) drop-shadow(0 0 16px rgba(255,46,166,0.55));
+}
+.fcr-fab-lock {
+    box-shadow: 0 0 4px #21e6ffaa, 0 0 8px rgba(33,230,255,0.6);
+    border-color: #21e6ff88 !important;
+}
+/* ================= HORLOGE LED CYAN =================
+   Petit afficheur façon LED, coin haut-droit (sous la barre d'en-tête),
+   discret et non cliquable, qui montre l'heure en direct — deux-points
+   clignotants + halo néon multicouche façon enseigne. */
+#fcr-neonbleu-clock {
+    position: fixed;
+    top: 42px;
+    right: 10px;
+    z-index: 9992;
+    padding: 4px 16px;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Courier New', monospace;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: #ffffff;
+    background: rgba(5,4,13,0.62);
+    border: 1px solid rgba(120,245,255,0.85);
+    border-radius: 4px;
+    text-shadow:
+        0 0 2px #ffffff, 0 0 5px #ffffff, 0 0 9px #baf6ff,
+        0 0 16px #21e6ff, 0 0 30px #21e6ff, 0 0 48px rgba(33,230,255,0.8),
+        0 0 64px rgba(255,46,166,0.35);
+    box-shadow:
+        0 0 6px rgba(255,255,255,0.6), 0 0 14px rgba(33,230,255,0.8),
+        0 0 26px rgba(33,230,255,0.5), 0 0 42px rgba(255,46,166,0.25),
+        inset 0 0 8px rgba(120,245,255,0.3);
+    pointer-events: none;
+    user-select: none;
+    animation:
+        fcr-neonbleu-clock-breathe 3s ease-in-out infinite,
+        fcr-neonbleu-sign 6s infinite;
+}
+@keyframes fcr-neonbleu-clock-breathe {
+    0%, 100% {
+        box-shadow: 0 0 6px rgba(255,255,255,0.6), 0 0 14px rgba(33,230,255,0.8), 0 0 26px rgba(33,230,255,0.5), 0 0 42px rgba(255,46,166,0.25), inset 0 0 8px rgba(120,245,255,0.3);
+        border-color: rgba(120,245,255,0.85);
+    }
+    50% {
+        box-shadow: 0 0 10px rgba(255,255,255,0.85), 0 0 22px rgba(33,230,255,1), 0 0 40px rgba(255,46,166,0.5), 0 0 60px rgba(33,230,255,0.4), inset 0 0 10px rgba(120,245,255,0.45);
+        border-color: rgba(255,46,166,0.7);
+    }
+}
+#fcr-neonbleu-clock .fcr-clock-colon {
+    animation: fcr-neonbleu-clock-blink 1s steps(1) infinite;
+}
+@keyframes fcr-neonbleu-clock-blink {
+    0%, 49%  { opacity: 1; }
+    50%, 100% { opacity: 0.25; }
 }`
         },
     };
@@ -1689,19 +1790,77 @@ table tr:hover td, table tr:hover th {
         fab.classList.add('fcr-fab-draggable');
         fab.style.touchAction = 'none';
 
-        // Position sauvegardée par l'utilisateur : on l'applique par-dessus
-        // la position par défaut déjà posée en inline style par le script.
-        const saved = GM_getValue('fcrFabPos_' + storageKey, null);
-        if (saved && typeof saved.top === 'number' && typeof saved.left === 'number') {
-            fab.style.top = saved.top + 'px';
-            fab.style.left = saved.left + 'px';
-            fab.style.bottom = '';
-            fab.style.right = '';
+        // Position "initiale" telle que définie par le script (bottom/right
+        // codés en dur), capturée AVANT toute position sauvegardée par
+        // l'utilisateur — sert de référence pour le verrouillage/reset.
+        const defaultPos = {
+            top: fab.style.top || '',
+            left: fab.style.left || '',
+            bottom: fab.style.bottom || '',
+            right: fab.style.right || '',
+        };
+
+        const isLocked = () => !!GM_getValue('fcrFabLocked_' + storageKey, false);
+
+        function applyDefaultPosition() {
+            fab.style.top = defaultPos.top;
+            fab.style.left = defaultPos.left;
+            fab.style.bottom = defaultPos.bottom;
+            fab.style.right = defaultPos.right;
         }
+
+        function applySavedOrDefaultPosition() {
+            const saved = GM_getValue('fcrFabPos_' + storageKey, null);
+            if (saved && typeof saved.top === 'number' && typeof saved.left === 'number') {
+                fab.style.top = saved.top + 'px';
+                fab.style.left = saved.left + 'px';
+                fab.style.bottom = '';
+                fab.style.right = '';
+            } else {
+                applyDefaultPosition();
+            }
+        }
+
+        // ── Pastille de verrouillage (🔒 position fixe / 🔓 déplaçable) ──
+        const lockBtn = document.createElement('div');
+        lockBtn.className = 'fcr-fab-lock';
+        function refreshLockUI() {
+            const locked = isLocked();
+            fab.classList.toggle('fcr-fab-locked', locked);
+            lockBtn.textContent = locked ? '🔒' : '🔓';
+            lockBtn.title = locked
+                ? 'Position verrouillée en position initiale — cliquer pour autoriser le déplacement'
+                : 'Position libre (déplaçable) — cliquer pour verrouiller en position initiale';
+        }
+        refreshLockUI();
+        fab.appendChild(lockBtn);
+
+        if (isLocked()) {
+            applyDefaultPosition();
+        } else {
+            applySavedOrDefaultPosition();
+        }
+
+        lockBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+        });
+        lockBtn.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+        lockBtn.addEventListener('pointerup', (e) => {
+            e.stopPropagation();
+            const nowLocked = !isLocked();
+            GM_setValue('fcrFabLocked_' + storageKey, nowLocked);
+            if (nowLocked) {
+                GM_setValue('fcrFabPos_' + storageKey, null);
+                applyDefaultPosition();
+            }
+            refreshLockUI();
+        });
 
         let dragging = false, moved = false, startX = 0, startY = 0, startTop = 0, startLeft = 0;
 
         fab.addEventListener('pointerdown', (e) => {
+            if (isLocked() || e.target.closest('.fcr-fab-lock')) return;
             if (e.button !== undefined && e.button !== 0) return;
             dragging = true;
             moved = false;
@@ -1739,6 +1898,33 @@ table tr:hover td, table tr:hover th {
         fab.addEventListener('pointerup', endDrag);
         fab.addEventListener('pointercancel', endDrag);
     }
+
+    // Style général de la pastille de verrouillage des FAB — indépendant du
+    // thème, toujours actif quel que soit le thème de couleur choisi.
+    GM_addStyle(`
+        .fcr-fab-lock {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: rgba(20,20,20,0.9);
+            border: 1px solid rgba(255,255,255,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            line-height: 1;
+            cursor: pointer;
+            z-index: 3;
+            user-select: none;
+            touch-action: none;
+        }
+        .fcr-fab-draggable:not(.fcr-fab-locked) { cursor: grab; }
+        .fcr-fab-draggable:not(.fcr-fab-locked):active { cursor: grabbing; }
+        .fcr-fab-draggable.fcr-fab-locked { cursor: default; }
+    `);
 
     // Un seul écouteur global, posé en phase de capture : il s'exécute avant
     // le handler "click" (toggle panneau) attaché sur chaque FAB, quel que
@@ -1850,10 +2036,98 @@ table tr:hover td, table tr:hover th {
         }
     }
 
+    // ── Horloge LED cyan (barre du haut, entre "Search" et le login, thème Néon Bleu uniquement) ──
+    function fcrFormatClockHTML(d) {
+        const pad = n => String(n).padStart(2, '0');
+        return `${pad(d.getHours())}<span class="fcr-clock-colon">:</span>${pad(d.getMinutes())}<span class="fcr-clock-colon">:</span>${pad(d.getSeconds())}`;
+    }
+    // Repère dynamiquement le bouton "Search" et le login employé affichés
+    // dans la barre de navigation tout en haut de la page, puis recentre
+    // l'horloge pile entre les deux. Si l'un des deux repères est introuvable
+    // (page pas encore chargée, changement de layout…), on retombe sur un
+    // positionnement par défaut en haut-droit.
+    function fcrLocateHeaderLandmarks() {
+        const login = (typeof getCookie === 'function' ? getCookie('fcmenu-employeeLogin') : '') || '';
+        const candidates = Array.from(document.querySelectorAll('a, button, span, div, input[type="submit"]'))
+            .filter(el => el.offsetParent !== null);
+
+        const searchEl = candidates.find(el => {
+            const txt = (el.value || el.textContent || '').trim().toLowerCase();
+            if (txt !== 'search') return false;
+            const r = el.getBoundingClientRect();
+            return r.top >= 0 && r.top < 90 && r.width > 0;
+        });
+
+        let userEl = null;
+        if (login) {
+            userEl = candidates.find(el => {
+                if (el.children.length > 0) return false;
+                const txt = (el.textContent || '').trim().toLowerCase();
+                if (txt !== login.toLowerCase()) return false;
+                const r = el.getBoundingClientRect();
+                return r.top >= 0 && r.top < 90 && r.width > 0;
+            });
+        }
+        return { searchEl, userEl };
+    }
+    function fcrPositionNeonClock(clock) {
+        try {
+            const { searchEl, userEl } = fcrLocateHeaderLandmarks();
+            if (searchEl && userEl) {
+                const sRect = searchEl.getBoundingClientRect();
+                const uRect = userEl.getBoundingClientRect();
+                const gapLeft = sRect.right;
+                const gapRight = uRect.left;
+                if (gapRight - gapLeft > 40) {
+                    const centerY = Math.min(sRect.top, uRect.top) + Math.max(sRect.height, uRect.height) / 2;
+                    clock.style.position = 'fixed';
+                    clock.style.left = Math.round(gapLeft + (gapRight - gapLeft) / 2) + 'px';
+                    clock.style.top = Math.round(centerY) + 'px';
+                    clock.style.right = 'auto';
+                    clock.style.transform = 'translate(-50%, -50%)';
+                    return;
+                }
+            }
+        } catch (e) { /* on retombe sur le défaut ci-dessous */ }
+        // Défaut : coin haut-droit, sous la barre d'en-tête.
+        clock.style.position = 'fixed';
+        clock.style.top = '42px';
+        clock.style.right = '10px';
+        clock.style.left = 'auto';
+        clock.style.transform = 'none';
+    }
+    function injectFcrNeonClock() {
+        let clock = document.getElementById('fcr-neonbleu-clock');
+        if (clock) { fcrPositionNeonClock(clock); return; }
+        clock = document.createElement('div');
+        clock.id = 'fcr-neonbleu-clock';
+        clock.innerHTML = fcrFormatClockHTML(new Date());
+        document.body.appendChild(clock);
+        fcrPositionNeonClock(clock);
+        clock._fcrInterval = setInterval(() => {
+            clock.innerHTML = fcrFormatClockHTML(new Date());
+        }, 1000);
+        clock._fcrResizeHandler = () => fcrPositionNeonClock(clock);
+        window.addEventListener('resize', clock._fcrResizeHandler);
+    }
+    function removeFcrNeonClock() {
+        const clock = document.getElementById('fcr-neonbleu-clock');
+        if (!clock) return;
+        if (clock._fcrInterval) clearInterval(clock._fcrInterval);
+        if (clock._fcrResizeHandler) window.removeEventListener('resize', clock._fcrResizeHandler);
+        clock.remove();
+    }
+
     // Auto-réparation légère : si la page re-rend son bandeau (SPA), on
-    // repose l'enseigne tant que le thème Néon Bleu est actif.
+    // repose l'enseigne et les effets tant que le thème Néon Bleu est actif,
+    // et on recale l'horloge au cas où le header aurait bougé.
     setInterval(() => {
-        if (currentTheme === 'neonbleu') injectFcrNeonLogo();
+        if (currentTheme === 'neonbleu') {
+            injectFcrNeonLogo();
+            injectFcrNeonClock();
+            const clock = document.getElementById('fcr-neonbleu-clock');
+            if (clock) fcrPositionNeonClock(clock);
+        }
     }, 2000);
 
     function applyTheme(themeName) {
@@ -2332,11 +2606,13 @@ table tr:hover td, table tr:hover th {
             document.body.appendChild(butterfly2);
         }
 
-        // ── Enseigne néon du logo "FCResearch ETZ2" (thème NÉON BLEU uniquement) ──
+        // ── Enseigne néon et horloge LED (thème NÉON BLEU uniquement) ──
         if (themeName === 'neonbleu') {
             injectFcrNeonLogo();
+            injectFcrNeonClock();
         } else {
             removeFcrNeonLogo();
+            removeFcrNeonClock();
         }
     }
 
