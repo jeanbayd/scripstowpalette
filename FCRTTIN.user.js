@@ -5022,14 +5022,18 @@ table tr:hover td, table tr:hover th {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // ===== COLONNE ÉTAGE (FLOOR) DANS LE TABLEAU INVENTORY =====
+    // ===== ÉTAGE (FLOOR) DANS LE TABLEAU INVENTORY — BADGE INLINE =====
     // ════════════════════════════════════════════════════════════════
-    // Ajoute une colonne "Étage" entre "Container" et "ASIN" pour les bins
-    // POD (format P-X-XXXXXXX), en réutilisant la même méthode que le
-    // Floor Finder de FCRTTIN (page container-hierarchy). Le tableau
-    // #table-inventory étant un DataTables en scrollX, l'en-tête et le
-    // corps sont deux tables séparées, chacune avec son propre <colgroup> :
-    // il faut insérer la nouvelle colonne aux deux endroits pour rester aligné.
+    // v2 : on n'ajoute PLUS de colonne dans le tableau (thead/colgroup),
+    // ce qui provoquait des lignes d'en-tête dupliquées à chaque tri sur
+    // une autre colonne — DataTables reconstruit son header d'une façon
+    // qu'on n'a pas réussi à anticiper de manière fiable en modifiant sa
+    // structure de l'extérieur. À la place : un petit badge "Étage X" est
+    // simplement ajouté DANS la cellule "Container" déjà existante (on ne
+    // touche à aucune structure de table, donc DataTables n'a plus aucune
+    // raison de se comporter différemment lors d'un tri). Le tri "par
+    // étage" se fait via un bouton dédié dans la barre d'outils, qui
+    // réordonne manuellement les lignes déjà affichées.
     const fcrPodRegex = /P-\d-([A-Z]\d{3}){2}/;
     const fcrPodFloorCache = {};
 
@@ -5076,22 +5080,13 @@ table tr:hover td, table tr:hover th {
         });
     }
 
-    const FCR_FLOOR_COL_WIDTH = 80; // en px — assez large pour "Étage" sur une seule ligne
-
-    // ── Tri manuel par étage (indépendant de DataTables) ───────────────
-    // Cette colonne n'existe pas dans le modèle de données de DataTables
-    // (elle est injectée à la main dans le DOM), donc lui faire déclencher
-    // un vrai tri DataTables est fragile et provoque des doublons au clic.
-    // À la place : un clic sur l'en-tête "Étage" réordonne directement les
-    // <tr> déjà affichés via tbody.appendChild (déplace les nœuds existants,
-    // ne les duplique jamais). Cliquer sur un autre en-tête reprend le tri
-    // normal de DataTables, qui écrase ce tri "étage" — comportement voulu.
+    // ── Tri manuel par étage (bouton dédié, indépendant de DataTables) ──
     let fcrFloorSortDir = null; // null | 'asc' | 'desc'
 
-    function fcrFloorHeaderLabel() {
-        if (fcrFloorSortDir === 'asc')  return 'Étage ▲';
-        if (fcrFloorSortDir === 'desc') return 'Étage ▼';
-        return 'Étage ⇅';
+    function fcrFloorSortButtonLabel() {
+        if (fcrFloorSortDir === 'asc')  return '🗺️ Étage ▲';
+        if (fcrFloorSortDir === 'desc') return '🗺️ Étage ▼';
+        return '🗺️ Trier par étage';
     }
 
     function fcrSortRowsByFloor(dir) {
@@ -5123,119 +5118,71 @@ table tr:hover td, table tr:hover th {
 
     function fcrToggleFloorSort() {
         fcrFloorSortDir = fcrFloorSortDir === 'asc' ? 'desc' : (fcrFloorSortDir === 'desc' ? null : 'asc');
-        document.querySelectorAll('.fcr-floor-th').forEach(th => { th.textContent = fcrFloorHeaderLabel(); });
+        const btn = document.getElementById('floorSortButton');
+        if (btn) btn.textContent = fcrFloorSortButtonLabel();
         if (fcrFloorSortDir) fcrSortRowsByFloor(fcrFloorSortDir);
     }
 
-    // Insère un <col> après le premier <col> d'un colgroup donné, en
-    // ajustant la largeur totale de la table si celle-ci est fixée en dur.
-    function fcrInsertFloorCol(colgroup, width) {
-        if (!colgroup || colgroup.querySelector('.fcr-floor-col')) return;
-        const newCol = document.createElement('col');
-        newCol.className = 'fcr-floor-col';
-        newCol.style.width = width + 'px';
-        const firstCol = colgroup.querySelector('col');
-        if (firstCol && firstCol.nextSibling) colgroup.insertBefore(newCol, firstCol.nextSibling);
-        else colgroup.appendChild(newCol);
-        const table = colgroup.closest('table');
-        if (table && table.style.width) {
-            const currentWidth = parseFloat(table.style.width);
-            if (!isNaN(currentWidth)) table.style.width = (currentWidth + width) + 'px';
-        }
-    }
-
-    // Auto-réparatrice : DataTables régénère parfois entièrement le <thead>
-    // (tri au clic, redraw), ce qui efface notre colonne injectée puis
-    // laisse temporairement deux versions de la ligne d'en-tête coexister.
-    // On force donc : jamais plus d'une cellule "Étage" par ligne d'en-tête,
-    // texte forcé sur une seule ligne (le retour à la ligne faisait varier
-    // la hauteur d'en-tête et perturbait le calcul interne de DataTables,
-    // ce qui provoquait la ligne fantôme en double), et largeur fixe.
-    function fcrInjectFloorHeader() {
-        const scrollHead = document.querySelector('#table-inventory_wrapper .dataTables_scrollHead');
-        if (!scrollHead) return;
-        const theadRows = scrollHead.querySelectorAll('thead tr');
-        if (!theadRows.length) return;
-
-        theadRows.forEach(tr => {
-            const dupes = tr.querySelectorAll('.fcr-floor-th');
-            for (let i = 1; i < dupes.length; i++) dupes[i].remove();
-        });
-
-        theadRows.forEach(tr => {
-            if (tr.querySelector('.fcr-floor-th')) return;
-            const firstCell = tr.querySelector('th, td');
-            if (!firstCell) return;
-            const th = document.createElement('th');
-            th.className = (firstCell.className || '') + ' fcr-floor-th';
-            th.textContent = fcrFloorHeaderLabel();
-            th.title = 'Cliquer pour trier par étage (tri local, indépendant du tri du tableau)';
-            th.style.setProperty('white-space', 'nowrap', 'important');
-            th.style.setProperty('width', FCR_FLOOR_COL_WIDTH + 'px', 'important');
-            th.style.setProperty('max-width', FCR_FLOOR_COL_WIDTH + 'px', 'important');
-            th.style.cursor = 'pointer';
-            th.addEventListener('click', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                fcrToggleFloorSort();
-            });
-            tr.insertBefore(th, firstCell.nextSibling);
-        });
-
-        const headTable = theadRows[0].closest('table');
-        fcrInsertFloorCol(headTable ? headTable.querySelector('colgroup') : null, FCR_FLOOR_COL_WIDTH);
-        const bodyTable = document.querySelector('#table-inventory');
-        fcrInsertFloorCol(bodyTable ? bodyTable.querySelector('colgroup') : null, FCR_FLOOR_COL_WIDTH);
+    function addFloorSortButton() {
+        if (!isModuleEnabled('binFloor')) return;
+        const inventoryHeader = document.querySelector('[data-section-type="inventory"] .section-title');
+        if (!inventoryHeader || document.getElementById('floorSortButton')) return;
+        const button = document.createElement('button');
+        button.id = 'floorSortButton';
+        button.className = 'LoadPrep-button';
+        button.textContent = fcrFloorSortButtonLabel();
+        button.title = 'Trie les bins actuellement affichés par étage (tri local, indépendant du tri natif du tableau)';
+        button.addEventListener('click', fcrToggleFloorSort);
+        inventoryHeader.appendChild(button);
     }
 
     function fcrProcessFloorRow(row) {
-        const dupes = row.querySelectorAll('.fcr-floor-td');
-        for (let i = 1; i < dupes.length; i++) dupes[i].remove();
-        if (dupes.length) return;
-
         const firstTd = row.querySelector('td');
         if (!firstTd) return;
-        const td = document.createElement('td');
-        td.className = 'fcr-floor-td';
-        td.style.cssText = `text-align:center; font-weight:600; white-space:nowrap; width:${FCR_FLOOR_COL_WIDTH}px;`;
+        // Badge déjà posé sur cette ligne : rien à refaire. On n'ajoute
+        // jamais de <td>/<th> ni ne touche au colgroup, donc il n'y a
+        // structurellement aucune duplication possible ici.
+        if (firstTd.querySelector('.fcr-floor-badge')) return;
 
         const containerLink = firstTd.querySelector('a');
         const containerId = (containerLink ? containerLink.textContent : firstTd.textContent).trim();
 
         if (!fcrPodRegex.test(containerId)) {
-            td.textContent = '–';
-            td.style.opacity = '0.5';
-            row.dataset.fcrFloor = ''; // pas de bin POD -> pas d'étage, ira en fin de tri
-        } else {
-            td.textContent = '…';
-            row.dataset.fcrFloor = ''; // en attente de résolution
-            fcrGetPODFloor(containerId).then(location => {
-                const floorVal = (location && location.floor) ? location.floor : '';
-                td.textContent = floorVal || '?';
-                if (!floorVal) td.style.opacity = '0.5';
-                if (location && location.floor) td.title = `${location.floor}, ${location.aisle || '-'}, ${location.shelf || '-'}, ${location.slot || '-'}`;
-                row.dataset.fcrFloor = floorVal;
-                // Si un tri par étage est actif, cette ligne reprend sa place
-                // dès que sa valeur (souvent déjà en cache) est connue.
-                if (fcrFloorSortDir) fcrSortRowsByFloor(fcrFloorSortDir);
-            });
+            row.dataset.fcrFloor = ''; // pas de bin POD -> ira en fin de tri, rien à afficher
+            return;
         }
-        row.insertBefore(td, firstTd.nextSibling);
+
+        const badge = document.createElement('span');
+        badge.className = 'fcr-floor-badge';
+        badge.style.cssText = 'display:inline-block; margin-left:8px; padding:1px 6px; border-radius:4px; font-size:11px; font-weight:700; background:rgba(120,120,120,0.35); vertical-align:middle; white-space:nowrap;';
+        badge.textContent = '…';
+        row.dataset.fcrFloor = ''; // en attente de résolution
+        firstTd.appendChild(badge);
+
+        fcrGetPODFloor(containerId).then(location => {
+            const floorVal = (location && location.floor) ? location.floor : '';
+            badge.textContent = floorVal ? `Étage ${floorVal}` : '?';
+            if (location && location.floor) badge.title = `${location.floor}, ${location.aisle || '-'}, ${location.shelf || '-'}, ${location.slot || '-'}`;
+            if (!floorVal) badge.style.opacity = '0.5';
+            row.dataset.fcrFloor = floorVal;
+            // Si un tri par étage est actif, cette ligne reprend sa place
+            // dès que sa valeur (souvent déjà en cache) est connue.
+            if (fcrFloorSortDir) fcrSortRowsByFloor(fcrFloorSortDir);
+        });
     }
 
     let fcrFloorRowObserver = null;
-    let fcrFloorHeadObserver = null;
     function fcrInjectBinFloorColumn() {
         if (!isModuleEnabled('binFloor')) return;
         const table = document.querySelector('#table-inventory');
         if (!table) return;
-        fcrInjectFloorHeader();
+        addFloorSortButton();
         const tbody = table.querySelector('tbody');
         if (!tbody) return;
         tbody.querySelectorAll('tr').forEach(fcrProcessFloorRow);
 
         // DataTables redessine parfois tout le tbody (tri, pagination) : on
-        // observe pour retraiter uniquement les nouvelles lignes.
+        // observe pour poser le badge sur les nouvelles lignes uniquement.
         if (!fcrFloorRowObserver) {
             fcrFloorRowObserver = new MutationObserver(debounce(() => {
                 if (!isModuleEnabled('binFloor')) return;
@@ -5243,17 +5190,6 @@ table tr:hover td, table tr:hover th {
                 if (tb) tb.querySelectorAll('tr').forEach(fcrProcessFloorRow);
             }, 150));
             fcrFloorRowObserver.observe(tbody, { childList: true });
-        }
-
-        // Observer dédié sur l'en-tête : un clic de tri redessine le thead
-        // quasi instantanément, on réagit vite pour ne jamais laisser une
-        // version dupliquée s'afficher plus d'un instant.
-        const scrollHead = document.querySelector('#table-inventory_wrapper .dataTables_scrollHead');
-        if (scrollHead && !fcrFloorHeadObserver) {
-            fcrFloorHeadObserver = new MutationObserver(debounce(() => {
-                if (isModuleEnabled('binFloor')) fcrInjectFloorHeader();
-            }, 60));
-            fcrFloorHeadObserver.observe(scrollHead, { childList: true, subtree: true });
         }
     }
 
