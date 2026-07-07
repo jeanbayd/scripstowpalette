@@ -45,6 +45,7 @@
         godModePrint:   { label: '🖨️ God Mode (impression)',      default: true },
         hazmat:         { label: '☢️ Hazmat Level Display',       default: true },
         amazonFrPrice:  { label: '🛒 Prix Amazon.fr',             default: true },
+        binFloor:       { label: '🗺️ Colonne Étage (Inventory)',  default: true },
         perfMode:       { label: '⚡ Mode performance (coupe glow/ombre)', default: false },
     };
 
@@ -135,7 +136,8 @@
             row.appendChild(toggleTrack);
             body.appendChild(row);
 
-            toggleTrack.addEventListener('click', function() {
+            toggleTrack.addEventListener('click', function(e) {
+                e.stopPropagation();
                 const k = this.dataset.key;
                 const nowEnabled = !isModuleEnabled(k);
                 setModuleEnabled(k, nowEnabled);
@@ -156,7 +158,8 @@
             });
         });
 
-        header.addEventListener('click', () => {
+        header.addEventListener('click', (e) => {
+            e.stopPropagation();
             const opening = body.style.display === 'none';
             body.style.display = opening ? 'block' : 'none';
             document.getElementById('fcr-module-arrow').textContent = opening ? '▲' : '▼';
@@ -298,6 +301,40 @@
             clearTimeout(timeoutId);
             timeoutId = setTimeout(() => func.apply(this, args), delay);
         };
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // ===== TROUVER UNE COLONNE DU TABLEAU INVENTORY PAR SON LIBELLÉ =====
+    // ════════════════════════════════════════════════════════════════
+    // Le tableau #table-inventory (DataTables en scrollX) sépare l'en-tête
+    // (dataTables_scrollHead) du corps (tbody). Plutôt que de figer des
+    // "td:nth-child(2)" un peu partout dans le script (fragile dès qu'une
+    // colonne est ajoutée/retirée, comme la colonne Étage optionnelle),
+    // on retrouve la position réelle de la colonne à partir du texte de
+    // son en-tête, avec un petit cache invalidé si le nombre de colonnes change.
+    const _fcrInvColCache = {};
+    function fcrGetInventoryColIndex(labelStartsWith) {
+        const headerRow = document.querySelector('#table-inventory_wrapper .dataTables_scrollHead thead tr');
+        if (!headerRow) return -1;
+        const ths = headerRow.querySelectorAll('th');
+        const cacheKey = labelStartsWith.toLowerCase();
+        const cached = _fcrInvColCache[cacheKey];
+        if (cached && cached.colCount === ths.length) return cached.index;
+        let index = -1;
+        for (let i = 0; i < ths.length; i++) {
+            if (ths[i].textContent.trim().toLowerCase().startsWith(cacheKey)) { index = i; break; }
+        }
+        _fcrInvColCache[cacheKey] = { colCount: ths.length, index };
+        return index;
+    }
+    // Renvoie la cellule <td> d'une ligne du tableau inventory correspondant
+    // au libellé d'en-tête donné (ex: "asin", "quantity"). Retombe sur un
+    // index par défaut si l'en-tête n'a pas pu être lue (sécurité).
+    function fcrGetInventoryCell(row, labelStartsWith, fallbackIndex) {
+        const idx = fcrGetInventoryColIndex(labelStartsWith);
+        const cells = row.children;
+        if (idx >= 0 && cells[idx]) return cells[idx];
+        return (fallbackIndex != null && cells[fallbackIndex]) ? cells[fallbackIndex] : null;
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -2662,7 +2699,8 @@ table tr:hover td, table tr:hover th {
 
         sidebar.insertBefore(panel, sidebar.firstChild);
 
-        document.getElementById('fcr-theme-header').addEventListener('click', () => {
+        document.getElementById('fcr-theme-header').addEventListener('click', (e) => {
+            e.stopPropagation();
             const content = document.getElementById('fcr-theme-content');
             const arrow   = document.getElementById('fcr-theme-arrow');
             const opening = content.style.display === 'none';
@@ -2681,7 +2719,8 @@ table tr:hover td, table tr:hover th {
             GM_setValue('themePanelStaticOpen', opening);
         });
 
-        document.getElementById('fcr-theme-anim-header').addEventListener('click', () => {
+        document.getElementById('fcr-theme-anim-header').addEventListener('click', (e) => {
+            e.stopPropagation();
             const body  = document.getElementById('fcr-theme-anim-body');
             const arrow = document.getElementById('fcr-theme-anim-arrow');
             const opening = body.style.display === 'none';
@@ -3525,8 +3564,9 @@ table tr:hover td, table tr:hover th {
             const rows = document.querySelectorAll('#table-inventory tbody tr');
             const asinQuantities = {}, asins = [];
             for (const row of rows) {
-                const asinCell = row.querySelector('td:nth-child(2) > a');
-                const quantityCell = row.querySelector('td:nth-child(6)');
+                const asinCellParent = fcrGetInventoryCell(row, 'asin', 1);
+                const asinCell = asinCellParent ? asinCellParent.querySelector('a') : null;
+                const quantityCell = fcrGetInventoryCell(row, 'quantity', 5);
                 let quantity = quantityCell ? parseInt(quantityCell.innerText) || 0 : 0;
                 const asin = asinCell ? asinCell.innerText : '';
                 if (!asinQuantities[asin]) { asinQuantities[asin] = quantity; asins.push(asin); }
@@ -3641,8 +3681,9 @@ table tr:hover td, table tr:hover th {
             const rows = document.querySelectorAll('#table-inventory tbody tr');
             const asinQuantities = {}, asins = [];
             rows.forEach(row => {
-                const asinCell = row.querySelector('td:nth-child(2) > a');
-                const quantityCell = row.querySelector('td:nth-child(6)');
+                const asinCellParent = fcrGetInventoryCell(row, 'asin', 1);
+                const asinCell = asinCellParent ? asinCellParent.querySelector('a') : null;
+                const quantityCell = fcrGetInventoryCell(row, 'quantity', 5);
                 const quantity = quantityCell ? (parseInt(quantityCell.innerText) || 0) : 0;
                 const asin = asinCell ? asinCell.innerText.trim() : '';
                 if (!asin || quantity <= 0) return;
@@ -4923,7 +4964,8 @@ table tr:hover td, table tr:hover th {
             const rows = document.querySelectorAll('#table-inventory tbody tr');
             const asinSet = new Set();
             rows.forEach(row => {
-                const asinCell = row.querySelector('td:nth-child(2) > a');
+                const asinCellParent = fcrGetInventoryCell(row, 'asin', 1);
+                const asinCell = asinCellParent ? asinCellParent.querySelector('a') : null;
                 const asin = asinCell ? asinCell.innerText.trim() : '';
                 if (asin) asinSet.add(asin);
             });
@@ -4979,6 +5021,178 @@ table tr:hover td, table tr:hover th {
         }
     }
 
+    // ════════════════════════════════════════════════════════════════
+    // ===== ÉTAGE (FLOOR) DANS LE TABLEAU INVENTORY — BADGE INLINE =====
+    // ════════════════════════════════════════════════════════════════
+    // v2 : on n'ajoute PLUS de colonne dans le tableau (thead/colgroup),
+    // ce qui provoquait des lignes d'en-tête dupliquées à chaque tri sur
+    // une autre colonne — DataTables reconstruit son header d'une façon
+    // qu'on n'a pas réussi à anticiper de manière fiable en modifiant sa
+    // structure de l'extérieur. À la place : un petit badge "Étage X" est
+    // simplement ajouté DANS la cellule "Container" déjà existante (on ne
+    // touche à aucune structure de table, donc DataTables n'a plus aucune
+    // raison de se comporter différemment lors d'un tri). Le tri "par
+    // étage" se fait via un bouton dédié dans la barre d'outils, qui
+    // réordonne manuellement les lignes déjà affichées.
+    const fcrPodRegex = /P-\d-([A-Z]\d{3}){2}/;
+    const fcrPodFloorCache = {};
+
+    function fcrParsePODLocation(locationStr) {
+        const parts = locationStr.split(',').map(p => p.trim());
+        // La cellule source contient souvent un libellé ("Floor: 2") plutôt
+        // que la valeur seule : on ne garde que ce qui suit les ":" s'il y en a.
+        const stripLabel = (s) => {
+            if (!s) return '';
+            const m = s.match(/:\s*(.+)$/);
+            return (m ? m[1] : s).trim();
+        };
+        return {
+            floor: stripLabel(parts[0]),
+            aisle: stripLabel(parts[1]),
+            shelf: stripLabel(parts[2]),
+            slot:  stripLabel(parts[3]),
+        };
+    }
+
+    function fcrGetPODFloor(containerId) {
+        const podMatch = containerId.match(fcrPodRegex);
+        if (!podMatch) return Promise.resolve(null);
+        const pod = podMatch[0];
+        if (fcrPodFloorCache[pod]) return Promise.resolve(fcrPodFloorCache[pod]);
+        return new Promise((resolve) => {
+            GM_xmlhttpRequest({
+                url: window.location.href.replace(/\?.+/g, '/container-hierarchy?s=' + pod),
+                method: 'GET',
+                withCredentials: true,
+                onload: function(response) {
+                    try {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(response.responseText, 'text/html');
+                        const floorCell = doc.querySelector('div.a-span6:nth-child(1) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(4) > td:nth-child(2)');
+                        const locationStr = floorCell ? floorCell.textContent.trim() : '';
+                        const location = fcrParsePODLocation(locationStr);
+                        fcrPodFloorCache[pod] = location;
+                        resolve(location);
+                    } catch (e) { resolve(null); }
+                },
+                onerror: function() { resolve(null); }
+            });
+        });
+    }
+
+    // ── Tri manuel par étage (bouton dédié, indépendant de DataTables) ──
+    let fcrFloorSortDir = null; // null | 'asc' | 'desc'
+
+    function fcrFloorSortButtonLabel() {
+        if (fcrFloorSortDir === 'asc')  return '🗺️ Étage ▲';
+        if (fcrFloorSortDir === 'desc') return '🗺️ Étage ▼';
+        return '🗺️ Trier par étage';
+    }
+
+    function fcrSortRowsByFloor(dir) {
+        const tbody = document.querySelector('#table-inventory tbody');
+        if (!tbody) return;
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        if (!rows.length) return;
+
+        const getVal = (row) => {
+            const raw = row.dataset.fcrFloor;
+            if (raw === undefined || raw === '') return null;
+            const n = parseFloat(raw);
+            return isNaN(n) ? raw : n;
+        };
+
+        rows.sort((a, b) => {
+            const va = getVal(a), vb = getVal(b);
+            if (va === null && vb === null) return 0;
+            if (va === null) return 1;  // pas d'étage résolu -> toujours en dernier
+            if (vb === null) return -1;
+            if (va < vb) return dir === 'asc' ? -1 : 1;
+            if (va > vb) return dir === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        // Déplace les <tr> existants dans le nouvel ordre (pas de clone/duplication).
+        rows.forEach(row => tbody.appendChild(row));
+    }
+
+    function fcrToggleFloorSort() {
+        fcrFloorSortDir = fcrFloorSortDir === 'asc' ? 'desc' : (fcrFloorSortDir === 'desc' ? null : 'asc');
+        const btn = document.getElementById('floorSortButton');
+        if (btn) btn.textContent = fcrFloorSortButtonLabel();
+        if (fcrFloorSortDir) fcrSortRowsByFloor(fcrFloorSortDir);
+    }
+
+    function addFloorSortButton() {
+        if (!isModuleEnabled('binFloor')) return;
+        const inventoryHeader = document.querySelector('[data-section-type="inventory"] .section-title');
+        if (!inventoryHeader || document.getElementById('floorSortButton')) return;
+        const button = document.createElement('button');
+        button.id = 'floorSortButton';
+        button.className = 'LoadPrep-button';
+        button.textContent = fcrFloorSortButtonLabel();
+        button.title = 'Trie les bins actuellement affichés par étage (tri local, indépendant du tri natif du tableau)';
+        button.addEventListener('click', fcrToggleFloorSort);
+        inventoryHeader.appendChild(button);
+    }
+
+    function fcrProcessFloorRow(row) {
+        const firstTd = row.querySelector('td');
+        if (!firstTd) return;
+        // Badge déjà posé sur cette ligne : rien à refaire. On n'ajoute
+        // jamais de <td>/<th> ni ne touche au colgroup, donc il n'y a
+        // structurellement aucune duplication possible ici.
+        if (firstTd.querySelector('.fcr-floor-badge')) return;
+
+        const containerLink = firstTd.querySelector('a');
+        const containerId = (containerLink ? containerLink.textContent : firstTd.textContent).trim();
+
+        if (!fcrPodRegex.test(containerId)) {
+            row.dataset.fcrFloor = ''; // pas de bin POD -> ira en fin de tri, rien à afficher
+            return;
+        }
+
+        const badge = document.createElement('span');
+        badge.className = 'fcr-floor-badge';
+        badge.style.cssText = 'display:inline-block; margin-left:8px; padding:1px 6px; border-radius:4px; font-size:11px; font-weight:700; background:rgba(120,120,120,0.35); vertical-align:middle; white-space:nowrap;';
+        badge.textContent = '…';
+        row.dataset.fcrFloor = ''; // en attente de résolution
+        firstTd.appendChild(badge);
+
+        fcrGetPODFloor(containerId).then(location => {
+            const floorVal = (location && location.floor) ? location.floor : '';
+            badge.textContent = floorVal ? `Étage ${floorVal}` : '?';
+            if (location && location.floor) badge.title = `${location.floor}, ${location.aisle || '-'}, ${location.shelf || '-'}, ${location.slot || '-'}`;
+            if (!floorVal) badge.style.opacity = '0.5';
+            row.dataset.fcrFloor = floorVal;
+            // Si un tri par étage est actif, cette ligne reprend sa place
+            // dès que sa valeur (souvent déjà en cache) est connue.
+            if (fcrFloorSortDir) fcrSortRowsByFloor(fcrFloorSortDir);
+        });
+    }
+
+    let fcrFloorRowObserver = null;
+    function fcrInjectBinFloorColumn() {
+        if (!isModuleEnabled('binFloor')) return;
+        const table = document.querySelector('#table-inventory');
+        if (!table) return;
+        addFloorSortButton();
+        const tbody = table.querySelector('tbody');
+        if (!tbody) return;
+        tbody.querySelectorAll('tr').forEach(fcrProcessFloorRow);
+
+        // DataTables redessine parfois tout le tbody (tri, pagination) : on
+        // observe pour poser le badge sur les nouvelles lignes uniquement.
+        if (!fcrFloorRowObserver) {
+            fcrFloorRowObserver = new MutationObserver(debounce(() => {
+                if (!isModuleEnabled('binFloor')) return;
+                const tb = document.querySelector('#table-inventory tbody');
+                if (tb) tb.querySelectorAll('tr').forEach(fcrProcessFloorRow);
+            }, 150));
+            fcrFloorRowObserver.observe(tbody, { childList: true });
+        }
+    }
+
     // ===== OBSERVERS POUR LES BOUTONS INVENTORY =====
     // ════════════════════════════════════════════════════════════════
     // Perf : mutualisé sur l'observer racine partagé (fcrOnRootMutation)
@@ -4998,12 +5212,13 @@ table tr:hover td, table tr:hover th {
             if (!hasCsvBtn)        addCsvExportButton();
             if (!hasTotalPriceBtn) addTotalPriceButton();
             if (!hasHazmatChip)    addInventoryHazmatIndicator();
+            fcrInjectBinFloorColumn();
         }
         if (hasHistory && !hasHistoryBtn) addCsvHistoryButton();
     }, 800)); // debounce augmenté 500→800ms
 
     setTimeout(() => {
-        if (document.querySelector('[data-section-type="inventory"]')) { addWeightButton(); addCsvExportButton(); addTotalPriceButton(); addInventoryHazmatIndicator(); }
+        if (document.querySelector('[data-section-type="inventory"]')) { addWeightButton(); addCsvExportButton(); addTotalPriceButton(); addInventoryHazmatIndicator(); fcrInjectBinFloorColumn(); }
         if (document.querySelector('#table-inventory-history')) addCsvHistoryButton();
     }, 2500);
 
@@ -6051,23 +6266,31 @@ table tr:hover td, table tr:hover th {
 
     })();
 
-    // === Correction position sidebar : suit le header + reste collée pendant le scroll ===
-    (function fixSidebarOffset() {
+    // === Correction position sidebar : suit le header + suit le scroll de la page ===
+    // NOTE : on ne compte plus sur CSS `position: sticky` pour faire tenir la sidebar,
+    // car sticky casse silencieusement dès qu'un ancêtre a un overflow différent de
+    // "visible" (fréquent sur les apps internes — notamment la page d'accueil, qui a
+    // une structure de conteneur différente des pages FCResearch/AFT). On pilote donc
+    // tout nous-mêmes en JS avec position:fixed, ce qui fonctionne quel que soit le
+    // conteneur parent, et on force les styles avec priorité "important" pour ne
+    // jamais se faire écraser par les règles CSS `!important` du thème actif.
+    (function fixSidebarFollowScroll() {
         function getSidebar() {
             return document.querySelector('#side-bar') || document.querySelector('.sidebar') || document.querySelector('[id*="side"]');
         }
 
-        function computeOffset(sidebar) {
+        let headerOffset = 0;   // hauteur du header fixe/sticky à respecter en haut
+        let naturalTop = null;  // position de la sidebar dans le flux normal (doc, hors scroll)
+        let isFixed = false;
+
+        function computeHeaderOffset(sidebar) {
             const sidebarRect = sidebar.getBoundingClientRect();
             let maxBottom = 0;
 
-            // 1) Cas le plus courant : un header en position fixed/sticky collé en haut de l'écran
-            //    qui chevauche horizontalement la sidebar (donc passe "par-dessus" elle).
-            // Perf : un header fixed/sticky se trouve quasi toujours près de la racine du
-            // <body> (pas enfoui dans une table inventaire de plusieurs milliers de lignes).
-            // On borne donc le scan aux 4 premiers niveaux sous body au lieu de tout le
-            // sous-arbre ("body *"), ce qui évite un getComputedStyle()+getBoundingClientRect()
-            // (donc un reflow forcé) sur chaque ligne de tableau à chaque appel.
+            // Cas le plus courant : un header en position fixed/sticky collé en haut de
+            // l'écran qui chevauche horizontalement la sidebar (donc passe "par-dessus" elle).
+            // Perf : on borne le scan aux 4 premiers niveaux sous body plutôt que tout le
+            // sous-arbre, pour éviter un reflow forcé sur chaque ligne d'un tableau inventaire.
             const all = document.body.querySelectorAll(':scope > *, :scope > * > *, :scope > * > * > *, :scope > * > * > * > *');
             for (const el of all) {
                 if (el === sidebar || sidebar.contains(el) || el.contains(sidebar)) continue;
@@ -6078,53 +6301,116 @@ table tr:hover td, table tr:hover th {
                 // Les bandeaux hazmat s'empilent (voir fcrReflowHazmatBanners) : celui du bas
                 // a un top > 20, on l'accepte quand même explicitement pour ne pas être masqué.
                 const isStackedHazmatBanner = el.classList && el.classList.contains('hazmat-fixed-banner');
-                // Doit être collé en haut (top proche de 0) pour être considéré comme un header
                 if (r.top > 20 && !isStackedHazmatBanner) continue;
-                // Doit chevaucher horizontalement la colonne de la sidebar
                 if (r.right <= sidebarRect.left || r.left >= sidebarRect.right) continue;
                 if (r.bottom > maxBottom) maxBottom = r.bottom;
-            }
-
-            // 2) Fallback : si rien trouvé en fixed/sticky, on mesure la position naturelle
-            //    du sidebar dans le flux (cas où le header prend de la place normalement).
-            if (maxBottom === 0) {
-                const scrollY = window.scrollY || window.pageYOffset || 0;
-                const prevPosition = sidebar.style.position;
-                const prevTop = sidebar.style.top;
-                sidebar.style.position = 'static';
-                sidebar.style.top = 'auto';
-                maxBottom = sidebar.getBoundingClientRect().top + scrollY;
-                sidebar.style.position = prevPosition;
-                sidebar.style.top = prevTop;
             }
 
             return Math.max(0, Math.round(maxBottom));
         }
 
-        function applyOffset() {
-            const sidebar = getSidebar();
-            if (!sidebar) return;
-            const offset = computeOffset(sidebar);
-            document.documentElement.style.setProperty('--fcr-sidebar-offset', offset + 'px');
+        // Mesure la position/largeur "naturelle" de la sidebar dans le flux du document
+        // (en retirant temporairement tout positionnement fixed qu'on lui aurait appliqué).
+        function measureNatural(sidebar) {
+            const wasFixed = isFixed;
+            if (wasFixed) releaseFixed(sidebar, /*silent*/ true);
+
+            const rect = sidebar.getBoundingClientRect();
+            const scrollY = window.scrollY || window.pageYOffset || 0;
+            naturalTop = rect.top + scrollY;
+
+            if (wasFixed) applyFixed(sidebar);
         }
 
-        // Perf : resize et MutationObserver debouncés (150-200ms) comme partout ailleurs
-        // dans le script. Avant, un simple redimensionnement de fenêtre ou l'ajout d'un
-        // élément par le script lui-même sur document.body (tooltip, bandeau, modale...)
-        // déclenchait un recalcul complet en rafale, sans aucun throttle.
-        const applyOffsetDebounced = debounce(applyOffset, 150);
+        function applyFixed(sidebar) {
+            // Largeur/position horizontale : on se base sur le parent (le flux normal),
+            // pas sur la sidebar elle-même (qui serait déjà fixed au moment du calcul).
+            const parent = sidebar.parentElement;
+            const parentRect = parent ? parent.getBoundingClientRect() : sidebar.getBoundingClientRect();
+            const width = sidebar.offsetWidth || parentRect.width;
+
+            sidebar.style.setProperty('position', 'fixed', 'important');
+            sidebar.style.setProperty('top', headerOffset + 'px', 'important');
+            sidebar.style.setProperty('left', Math.round(parentRect.left) + 'px', 'important');
+            sidebar.style.setProperty('width', Math.round(width) + 'px', 'important');
+            sidebar.style.setProperty('max-height', `calc(100vh - ${headerOffset}px)`, 'important');
+            sidebar.style.setProperty('z-index', '500', 'important');
+        }
+
+        function releaseFixed(sidebar, silent) {
+            sidebar.style.removeProperty('position');
+            sidebar.style.removeProperty('top');
+            sidebar.style.removeProperty('left');
+            sidebar.style.removeProperty('width');
+            sidebar.style.removeProperty('z-index');
+            sidebar.style.setProperty('max-height', `calc(100vh - ${headerOffset}px)`, 'important');
+            if (!silent) isFixed = false;
+        }
+
+        // Petit espaceur invisible qui prend la place de la sidebar dans le flux quand
+        // elle passe en fixed, pour éviter que le reste de la page ne "saute" vers la gauche.
+        let spacer = null;
+        function ensureSpacer(sidebar) {
+            if (!spacer) {
+                spacer = document.createElement('div');
+                spacer.id = 'fcr-sidebar-spacer';
+                spacer.style.cssText = 'flex-shrink:0;';
+                sidebar.parentElement && sidebar.parentElement.insertBefore(spacer, sidebar);
+            }
+            return spacer;
+        }
+
+        function onScroll() {
+            const sidebar = getSidebar();
+            if (!sidebar || naturalTop === null) return;
+            const scrollY = window.scrollY || window.pageYOffset || 0;
+            const shouldBeFixed = (scrollY + headerOffset) > naturalTop;
+
+            if (shouldBeFixed) {
+                const sp = ensureSpacer(sidebar);
+                if (!isFixed) {
+                    sp.style.width = sidebar.offsetWidth + 'px';
+                    sp.style.height = sidebar.offsetHeight + 'px';
+                    isFixed = true;
+                }
+                applyFixed(sidebar);
+                sp.style.display = '';
+            } else if (isFixed) {
+                isFixed = false;
+                releaseFixed(sidebar);
+                if (spacer) spacer.style.display = 'none';
+            }
+        }
+
+        let ticking = false;
+        function onScrollThrottled() {
+            if (ticking) return;
+            ticking = true;
+            requestAnimationFrame(() => { onScroll(); ticking = false; });
+        }
+
+        function recompute() {
+            const sidebar = getSidebar();
+            if (!sidebar) return;
+            headerOffset = computeHeaderOffset(sidebar);
+            document.documentElement.style.setProperty('--fcr-sidebar-offset', headerOffset + 'px');
+            measureNatural(sidebar);
+            onScroll();
+        }
+
+        const recomputeDebounced = debounce(recompute, 150);
 
         function init() {
-            applyOffset();
-            window.addEventListener('resize', applyOffsetDebounced);
-            window.addEventListener('orientationchange', applyOffsetDebounced);
-            // Recalcul si le DOM autour du sidebar change (header dynamique, bannières, etc.)
-            const ro = new MutationObserver(debounce(() => applyOffset(), 200));
+            recompute();
+            window.addEventListener('scroll', onScrollThrottled, { passive: true });
+            window.addEventListener('resize', recomputeDebounced);
+            window.addEventListener('orientationchange', recomputeDebounced);
+            // Recalcul si le DOM autour de la sidebar change (header dynamique, bannières, etc.)
+            const ro = new MutationObserver(debounce(() => recompute(), 200));
             ro.observe(document.body, { childList: true, subtree: false });
-            // Recalcul ponctuel après chargement complet (images/polices peuvent changer la hauteur du header)
-            window.addEventListener('load', () => setTimeout(applyOffset, 500));
-            setTimeout(applyOffset, 1000);
-            setTimeout(applyOffset, 3000);
+            window.addEventListener('load', () => setTimeout(recompute, 500));
+            setTimeout(recompute, 1000);
+            setTimeout(recompute, 3000);
         }
 
         if (document.readyState === 'loading') {
