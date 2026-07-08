@@ -1,0 +1,1641 @@
+// ==UserScript==
+// @name         FCR Trace Sweeper (ETZ2)
+// @namespace    fcr-trace-sweeper
+// @version      0.11.0
+// @description  Trace le chemin physique (AA -> bins -> totes -> container history -> station) d'un sweeper sur FCResearch ETZ2 — défile automatiquement le tableau Inventory History pour charger toutes les lignes (tables lazy-load sans DataTables), renseigne Start date/End date et clique Search avant de scraper, analyse directe d'un AA par login + date (sans naviguer sur sa page), résolution de station priorisée via RoboScout (repli sur code dz-P direct), seuil de temps sans action réglable (défaut 15 min, persisté), regroupement des totes successives, propagation de localisation, filtrage pc99 non résolus, historique des temps sans action (pauses planifiées exclues) avec total, rework visuel, résistance au throttling d'onglet en arrière-plan
+// @author       JB
+// @match        https://fcresearch-eu.aka.amazon.com/ETZ2/results?s=*
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_xmlhttpRequest
+// @connect      roboscout.amazon.com
+// @run-at       document-idle
+// ==/UserScript==
+
+(function () {
+  'use strict';
+
+  /* =========================================================
+   *  CONFIG / CONSTANTES
+   *  A AJUSTER une fois testé sur la vraie page.
+   * ========================================================= */
+  const BASE_URL = 'https://fcresearch-eu.aka.amazon.com/ETZ2/results?s=';
+  const TOTE_REGEX = /^tsX/i;                              // identifie une tote (ex: tsX0wpe1usz)
+  const CONTAINER_REGEX = /(dz-P-[A-Z]\d+|pc99[\w-]+)/i;    // formats de "station" exploitables
+  const MATCH_WINDOW_MS = 1000 * 60 * 30;                   // fenêtre max acceptable entre date inventaire et date container (30 min), au-delà = "pas de match fiable"
+
+  // Config recherche RoboScout (résolution station via login AA + fenêtre de temps)
+  const ROBOSCOUT_STATIC_PARAMS_API = {
+    mom_ids: '428,2060,321,362,379,426',
+    osm_ids: '30',
+    oxm_ids: '1698,1792,445,854,1962,441',
+    ofm_ids: '',
+  };
+  const ROBOSCOUT_WINDOW_MS = 1000 * 60 * 15; // ±15 min autour de la date de match (fenêtre totale 30 min)
+
+  // Plages horaires quotidiennes à exclure du calcul des "temps sans action"
+  // (ex: pause déjeuner de l'AA, planifiée, qui ne doit pas compter comme arrêt du
+  // sweeper). Format 24h "HH:MM". Ajouter d'autres entrées si besoin (ex: 2 pauses).
+  const EXCLUDED_BREAKS = [
+    { start: '10:00', end: '10:30' },
+  ];
+
+  /* =========================================================
+   *  UTILITAIRES GENERIQUES
+   * ========================================================= */
+
+  /* ---- Anti-throttling onglet en arrière-plan --------------------------------
+   * Chrome/Firefox ralentissent fortement setTimeout/setInterval quand l'onglet
+   * n'est pas visible (jusqu'à 1 exécution/minute après quelques minutes en
+   * arrière-plan). C'est ce qui donne l'impression que le script "s'arrête" si on
+   * change d'onglet ou qu'on minimise la fenêtre pendant l'analyse : tout le
+   * script attend via ce genre de timers (sondage de tableau, délais de sécurité).
+   *
+   * Un Worker tourne dans un thread séparé et n'est PAS soumis à ce throttling :
+   * on l'utilise comme métronome pour piloter toutes les attentes du script à la
+   * place de setTimeout/setInterval. Si la page bloque la création du Worker
+   * (politique de sécurité stricte), on retombe simplement sur setInterval
+   * classique — moins résistant au throttling, mais le script continue de
+   * fonctionner normalement onglet actif.
+   * ----------------------------------------------------------------------- */
+  let _heartbeatTimer = null; // Worker si dispo, sinon un id de setInterval
+  let _heartbeatIsWorker = false;
+  const _heartbeatListeners = new Set();
+
+  function ensureHeartbeat() {
+    if (_heartbeatTimer) return;
+    try {
+      const code = 'setInterval(() => postMessage(1), 100);';
+      const blob = new Blob([code], { type: 'application/javascript' });
+      const worker = new Worker(URL.createObjectURL(blob));
+      worker.onmessage = () => {
+        for (const fn of Array.from(_heartbeatListeners)) fn();
+      };
+      worker.onerror = () => {
+        console.warn('FCR Trace: Worker métronome en erreur, repli sur setInterval classique.');
+        try { worker.terminate(); } catch (e) {}
+        _heartbeatTimer = null;
+        _heartbeatIsWorker = false;
+        ensureHeartbeatFallback();
+      };
+      _heartbeatTimer = worker;
+      _heartbeatIsWorker = true;
+    } catch (e) {
+      console.warn('FCR Trace: création du Worker métronome impossible (CSP ?), repli sur setInterval classique.', e);
+      ensureHeartbeatFallback();
+    }
+  }
+
+  function ensureHeartbeatFallback() {
+    if (_heartbeatTimer) return;
+    _heartbeatTimer = setInterval(() => {
+      for (const fn of Array.from(_heartbeatListeners)) fn();
+    }, 100);
+    _heartbeatIsWorker = false;
+  }
+
+  // S'abonne au métronome ; renvoie une fonction pour se désabonner.
+  function onHeartbeat(fn) {
+    ensureHeartbeat();
+    _heartbeatListeners.add(fn);
+    return () => _heartbeatListeners.delete(fn);
+  }
+
+  // Equivalent de setTimeout(callback, ms) mais piloté par le métronome (donc
+  // immunisé au throttling d'onglet en arrière-plan).
+  function heartbeatDelay(callback, ms) {
+    const start = Date.now();
+    const off = onHeartbeat(() => {
+      if (Date.now() - start >= ms) {
+        off();
+        callback();
+      }
+    });
+    return off;
+  }
+
+  function waitFor(selectorFn, { timeout = 15000, interval = 250 } = {}) {
+    return new Promise((resolve, reject) => {
+      const start = Date.now();
+      let lastCheck = 0;
+      const off = onHeartbeat(() => {
+        const now = Date.now();
+        if (now - lastCheck < interval) return;
+        lastCheck = now;
+        const el = selectorFn();
+        if (el) {
+          off();
+          return resolve(el);
+        }
+        if (now - start > timeout) {
+          off();
+          return reject(new Error('waitFor: timeout'));
+        }
+      });
+    });
+  }
+
+  // Applique `fn` à chaque élément de `items` avec au plus `limit` exécutions en
+  // parallèle (au lieu d'un for...of séquentiel) — utilisé pour paralléliser la
+  // récupération des historiques container (un iframe par tote) et les résolutions
+  // RoboScout (une requête réseau par login), qui étaient auparavant traitées une par
+  // une et faisaient traîner l'analyse en longueur dès qu'il y avait plusieurs totes.
+  async function mapWithConcurrency(items, limit, fn) {
+    let idx = 0;
+    async function worker() {
+      while (idx < items.length) {
+        const current = idx++;
+        await fn(items[current], current);
+      }
+    }
+    const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker);
+    await Promise.all(workers);
+  }
+
+  function cellText(v) {
+    if (v == null) return '';
+    if (typeof v !== 'string') return String(v);
+    if (v.indexOf('<') === -1) return v.trim();
+    const d = document.createElement('div');
+    d.innerHTML = v;
+    return (d.textContent || '').trim();
+  }
+
+  function headerSignature(th) {
+    const text = th.textContent && th.textContent.trim();
+    if (text) return text.toLowerCase();
+    const aria = th.getAttribute('aria-label');
+    if (aria) return aria.toLowerCase();
+    const id = th.id || '';
+    return id.replace(/-/g, ' ').toLowerCase();
+  }
+
+  // Cible directement une table par son ID DOM stable (ex: "table-inventory-history").
+  // Beaucoup plus fiable que la recherche par texte d'en-tête : évite la race condition
+  // où le clone d'en-tête (scrollHeadInner, 1 seule <tr>) est prêt avant la vraie table
+  // de données (dont le thead "fantôme" met parfois plus de temps à être peuplé), et
+  // n'a pas besoin de deviner un textContent qui peut être vide.
+  // On exige au moins 1 <tr> avec des <td> pour valider que c'est bien la table de données
+  // (et pas un doublon d'en-tête sans lignes) avant de la retenir.
+  function findTableById(doc, id, headerNeedlesFallback) {
+    const byId = doc.getElementById(id);
+    if (byId && byId.querySelector('tbody tr td, tr td')) return byId;
+    // fallback si l'ID a changé (autre FC / autre version de l'UI)
+    return headerNeedlesFallback ? findTableByHeaders(doc, headerNeedlesFallback) : null;
+  }
+
+  function findTableByHeaders(doc, headerNeedles) {
+    const tables = Array.from(doc.querySelectorAll('table'));
+    const candidates = [];
+    for (const t of tables) {
+      const headers = Array.from(t.querySelectorAll('thead th')).map(headerSignature);
+      if (headerNeedles.every(h => headers.some(hd => hd.includes(h)))) {
+        candidates.push(t);
+      }
+    }
+    if (!candidates.length) return null;
+    if (candidates.length === 1) return candidates[0];
+
+    // Plusieurs tables correspondent aux en-têtes (ex: DataTables scrollX/scrollY duplique
+    // le thead dans un tableau "scrollHeadInner" séparé du tableau "scrollBody" qui contient
+    // les vraies lignes) : on prend celle qui a le plus de lignes réelles dans son tbody.
+    console.log(`FCR Trace: ${candidates.length} table(s) correspondent aux en-têtes [${headerNeedles.join(', ')}], sélection de celle avec le plus de lignes.`);
+    let best = candidates[0];
+    let bestCount = -1;
+    for (const c of candidates) {
+      const count = c.querySelectorAll('tbody tr, tr').length;
+      console.log('  candidate:', count, 'ligne(s) —', c.outerHTML.slice(0, 150).replace(/\s+/g, ' '));
+      if (count > bestCount) {
+        bestCount = count;
+        best = c;
+      }
+    }
+    return best;
+  }
+
+  function getDataTableInstance(table) {
+    const win = table.ownerDocument.defaultView;
+    if (
+      win &&
+      win.jQuery &&
+      win.jQuery.fn &&
+      win.jQuery.fn.DataTable &&
+      win.jQuery.fn.DataTable.isDataTable &&
+      win.jQuery.fn.DataTable.isDataTable(table)
+    ) {
+      return win.jQuery(table).DataTable();
+    }
+    return null;
+  }
+
+  // Remonte les ancêtres de `el` jusqu'à trouver un conteneur réellement scrollable
+  // (overflow-y auto/scroll ET contenu qui dépasse sa hauteur visible). Beaucoup de
+  // tableaux React (Cloudscape et consorts) chargent leurs lignes au fur et à mesure
+  // du défilement d'un DIV wrapper interne, pas de la fenêtre elle-même.
+  function findScrollableAncestor(el) {
+    let node = el.parentElement;
+    const doc = el.ownerDocument;
+    const win = doc.defaultView;
+    while (node && node !== doc.body) {
+      const style = win.getComputedStyle(node);
+      if (
+        (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
+        node.scrollHeight > node.clientHeight + 5
+      ) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+    // repli : scroll de la fenêtre/document elle-même
+    return doc.scrollingElement || doc.documentElement;
+  }
+
+  // Défile progressivement jusqu'en bas du conteneur (ou de la fenêtre) contenant la
+  // table, en laissant à chaque étape le temps à un éventuel chargement lazy de
+  // s'exécuter, et s'arrête dès que ni le nombre de lignes ni la hauteur scrollable
+  // n'évoluent plus pendant 3 vérifications consécutives (= tout est chargé). Un
+  // garde-fou (maxRounds) évite une boucle infinie si le tableau ne réagit jamais au
+  // scroll (dans ce cas on scrape simplement ce qui est déjà chargé).
+  async function autoScrollToLoadAllRows(table, log) {
+    const doc = table.ownerDocument;
+    const win = doc.defaultView;
+    const scrollEl = findScrollableAncestor(table);
+    const isWindowScroll = scrollEl === doc.documentElement || scrollEl === doc.scrollingElement;
+
+    const countRows = () => table.querySelectorAll('tbody tr, tr').length;
+    const scrollableHeight = () => (isWindowScroll ? doc.documentElement.scrollHeight : scrollEl.scrollHeight);
+
+    let stableRounds = 0;
+    let lastCount = countRows();
+    let lastHeight = scrollableHeight();
+    const maxRounds = 80; // filet de sécurité (80 x 250ms = 20s max si le scroll ne déclenche jamais rien)
+
+    for (let round = 0; round < maxRounds; round++) {
+      if (isWindowScroll) {
+        win.scrollTo(0, doc.documentElement.scrollHeight);
+      } else {
+        scrollEl.scrollTop = scrollEl.scrollHeight;
+        scrollEl.dispatchEvent(new Event('scroll', { bubbles: true }));
+      }
+      // laisse le temps à un éventuel appel réseau / rendu lazy de s'exécuter
+      await new Promise(resolve => heartbeatDelay(resolve, 250));
+
+      const newCount = countRows();
+      const newHeight = scrollableHeight();
+
+      if (newCount === lastCount && newHeight === lastHeight) {
+        stableRounds++;
+        if (stableRounds >= 2) break; // 2 vérifs de suite sans changement -> tout est chargé
+      } else {
+        stableRounds = 0;
+        if (newCount !== lastCount) {
+          log && log(`⏳ Chargement du tableau (défilement) : ${newCount} ligne(s) chargée(s)...`);
+        }
+        lastCount = newCount;
+        lastHeight = newHeight;
+      }
+    }
+
+    return countRows();
+  }
+
+  // Variante de autoScrollToLoadAllRows spécifique au tableau Container History : ce
+  // tableau est trié du plus récent au plus ancien (confirmé sur la vraie page), et on
+  // ne s'intéresse jamais qu'à la ligne la PLUS PROCHE d'une date cible (voir
+  // findClosestContainerMatch). Dès que la dernière ligne chargée est déjà antérieure
+  // ou égale à `targetDateStr`, toutes les lignes qui suivraient ne feraient que
+  // reculer encore plus loin dans le temps -> on peut arrêter le défilement là, au lieu
+  // de tout charger jusqu'en bas. Gain important quand l'historique d'une tote est long
+  // et que la date cible est récente (on n'a besoin que des toutes premières lignes).
+  // Si `targetDateStr` est absent/invalide ou que la colonne date n'est pas trouvée, se
+  // comporte comme autoScrollToLoadAllRows (charge tout, sans arrêt anticipé).
+  async function autoScrollUntilDate(table, targetDateStr, log) {
+    const doc = table.ownerDocument;
+    const win = doc.defaultView;
+    const scrollEl = findScrollableAncestor(table);
+    const isWindowScroll = scrollEl === doc.documentElement || scrollEl === doc.scrollingElement;
+    const target = parseFcrDate(targetDateStr);
+
+    const headers = Array.from(table.querySelectorAll('thead th')).map(headerSignature);
+    const dateColIdx = headers.findIndex(h => h.includes('move date'));
+
+    const getTrEls = () => {
+      let trEls = Array.from(table.querySelectorAll('tbody tr'));
+      if (trEls.length === 0) {
+        trEls = Array.from(table.querySelectorAll('tr')).filter(tr => tr.querySelector('td'));
+      }
+      return trEls;
+    };
+    const countRows = () => getTrEls().length;
+    const scrollableHeight = () => (isWindowScroll ? doc.documentElement.scrollHeight : scrollEl.scrollHeight);
+
+    const lastRowDate = () => {
+      if (dateColIdx === -1 || !target) return null;
+      const trEls = getTrEls();
+      const lastTr = trEls[trEls.length - 1];
+      if (!lastTr) return null;
+      const tds = lastTr.querySelectorAll('td');
+      const cell = tds[dateColIdx];
+      return cell ? parseFcrDate(cell.textContent.trim()) : null;
+    };
+
+    let stableRounds = 0;
+    let lastCount = countRows();
+    let lastHeight = scrollableHeight();
+    const maxRounds = 80;
+
+    for (let round = 0; round < maxRounds; round++) {
+      const d = lastRowDate();
+      if (d && d.getTime() <= target.getTime()) {
+        log && log('⏳ Historique container : date cible atteinte, arrêt anticipé du défilement.');
+        break;
+      }
+
+      if (isWindowScroll) {
+        win.scrollTo(0, doc.documentElement.scrollHeight);
+      } else {
+        scrollEl.scrollTop = scrollEl.scrollHeight;
+        scrollEl.dispatchEvent(new Event('scroll', { bubbles: true }));
+      }
+      await new Promise(resolve => heartbeatDelay(resolve, 250));
+
+      const newCount = countRows();
+      const newHeight = scrollableHeight();
+      if (newCount === lastCount && newHeight === lastHeight) {
+        stableRounds++;
+        if (stableRounds >= 2) break;
+      } else {
+        stableRounds = 0;
+        lastCount = newCount;
+        lastHeight = newHeight;
+      }
+    }
+
+    return countRows();
+  }
+
+  // Force l'affichage de TOUTES les lignes (pas juste la page visible) puis retourne
+  // { rows, indexOf } où rows = tableau de tableaux de cellules (texte brut, HTML retiré)
+  // et indexOf(name) = index de colonne correspondant à un titre (recherche par sous-chaîne).
+  //
+  // IMPORTANT: on récupère les titres de colonnes via dt.settings()[0].aoColumns plutôt
+  // que via les <th> visibles du DOM, car certaines colonnes peuvent être présentes dans
+  // .rows().data() sans être rendues dans le <thead> (colonnes cachées/visible:false).
+  // Utiliser les <th> visibles pour indexer .rows().data() peut donc décaler tous les
+  // index et faire planter les regex de filtrage (c'est ce qui causait "0 mouvement tracé").
+  async function expandAndScrapeTable(table, log, targetDateStr) {
+    const dt = getDataTableInstance(table);
+    if (dt) {
+      const win = table.ownerDocument.defaultView;
+      await new Promise(resolve => {
+        let resolved = false;
+        const done = () => {
+          if (resolved) return;
+          resolved = true;
+          resolve();
+        };
+        win.jQuery(table).one('draw.dt', done);
+        try {
+          dt.page.len(-1).draw();
+        } catch (e) {
+          console.warn('FCR Trace: page.len(-1) a échoué', e);
+          done();
+        }
+        heartbeatDelay(done, 10000); // filet de sécurité si l'event draw.dt ne part pas
+      });
+
+      const rows = dt
+        .rows()
+        .data()
+        .toArray()
+        .map(row => (Array.isArray(row) ? row.map(cellText) : Object.values(row).map(cellText)));
+
+      const settings = dt.settings()[0];
+      const titles = (settings.aoColumns || []).map(c =>
+        cellText(c.sTitle || c.title || '').toLowerCase()
+      );
+      console.log('FCR Trace: colonnes DataTable détectées =', titles);
+      console.log('FCR Trace: exemple de ligne brute =', rows[0]);
+
+      const indexOf = name => titles.findIndex(t => t.includes(name));
+      return { rows, indexOf };
+    }
+
+    // Fallback si pas de DataTables détecté : table à défilement (lazy-load React) très
+    // probable ici -> on défile jusqu'en bas pour forcer le chargement de toutes les
+    // lignes avant de scraper (sinon on ne récupère que les lignes déjà rendues à
+    // l'écran, ce qui tronque l'historique).
+    console.warn(
+      'FCR Trace: DataTables non détecté, défilement + scraping DOM brut.'
+    );
+    console.log('FCR Trace: table ciblée =', table.outerHTML.slice(0, 300).replace(/\s+/g, ' '));
+
+    const loadedCount = targetDateStr
+      ? await autoScrollUntilDate(table, targetDateStr, log)
+      : await autoScrollToLoadAllRows(table, log);
+    console.log(`FCR Trace: ${loadedCount} ligne(s) après défilement (${targetDateStr ? 'arrêt anticipé' : 'complet'}).`);
+
+    // NB: sur ces tables, le <th> réellement présent dans le DOM (celui de la table
+    // de données, distinct du clone d'en-tête visuel) a un textContent VIDE — il faut
+    // retomber sur aria-label / id comme le fait headerSignature(), sinon indexOf()
+    // ne trouvera jamais aucune colonne.
+    const headers = Array.from(table.querySelectorAll('thead th')).map(headerSignature);
+    console.log('FCR Trace: en-têtes détectés (fallback DOM) =', headers);
+
+    // On exclut les lignes d'en-tête (celles qui contiennent uniquement des <th>)
+    // et on prend toutes les <tr> restantes, qu'elles soient dans un <tbody> ou non.
+    let trEls = Array.from(table.querySelectorAll('tbody tr'));
+    if (trEls.length === 0) {
+      trEls = Array.from(table.querySelectorAll('tr')).filter(tr => tr.querySelector('td'));
+    }
+    console.log(`FCR Trace: ${trEls.length} <tr> trouvée(s) dans le tbody / la table.`);
+
+    const rows = trEls.map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim()));
+    const indexOf = name => headers.findIndex(h => h.includes(name));
+    return { rows, indexOf };
+  }
+
+  function parseFcrDate(str) {
+    if (!str) return null;
+    // Format observé : "2026-07-07 13:25:16" (CEST implicite)
+    const cleaned = str.replace(/\s+CEST$/i, '').trim();
+    const d = new Date(cleaned.replace(' ', 'T'));
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  // Renvoie le décalage Europe/Paris (en minutes) par rapport à UTC pour une date donnée,
+  // en gérant automatiquement CET (hiver, +1h) / CEST (été, +2h) sans règle DST codée en dur.
+  function europeParisOffsetMinutes(utcDate) {
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Europe/Paris',
+        timeZoneName: 'shortOffset',
+        hour: '2-digit',
+      }).formatToParts(utcDate);
+      const tzPart = parts.find(p => p.type === 'timeZoneName');
+      const m = tzPart && tzPart.value.match(/GMT([+-]\d+)/i);
+      return m ? parseInt(m[1], 10) * 60 : 120;
+    } catch (e) {
+      console.warn('FCR Trace: échec calcul offset Europe/Paris, fallback +2h (CEST)', e);
+      return 120;
+    }
+  }
+
+  // Convertit une date FCR ("2026-07-07 13:25:16", heure locale Europe/Paris CET/CEST)
+  // en timestamp UTC (ms), nécessaire pour interroger RoboScout qui attend l'heure en UTC
+  // (confirmé empiriquement : UI à 05:00-07:00 locale <-> URL startDateTime/endDateTime 03:00-05:00).
+  function fcrDateToUtcMs(str) {
+    if (!str) return null;
+    const cleaned = str.replace(/\s+CEST$/i, '').replace(/\s+CET$/i, '').trim();
+    const m = cleaned.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
+    if (!m) return null;
+    const [, y, mo, d, h, mi, s] = m.slice(1).map(Number);
+    // 1ère approximation en traitant les composants comme s'ils étaient déjà UTC,
+    // juste pour déterminer l'offset Paris applicable à cette date/saison.
+    const guessUtcMs = Date.UTC(y, mo - 1, d, h, mi, s);
+    const offsetMin = europeParisOffsetMinutes(new Date(guessUtcMs));
+    return guessUtcMs - offsetMin * 60000;
+  }
+
+  function formatUtcForRoboScout(ms) {
+    const d = new Date(ms);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+  }
+
+  // Construit l'URL de l'API JSON RoboScout (view_plot_data), filtrée sur un login AA
+  // + une fenêtre de temps (UTC) centrée sur la date de match (format FCR, heure locale
+  // Europe/Paris). Endpoint identifié via l'onglet Réseau : c'est lui qui charge les
+  // données du tableau après le clic "Run Analysis" (la page /analyze/... elle-même
+  // ne contient que la coquille vide, d'où l'échec du premier essai en HTML brut).
+  function buildRoboScoutApiUrl(aaLogin, matchDateStr) {
+    const centerUtcMs = fcrDateToUtcMs(matchDateStr);
+    if (centerUtcMs == null) return null;
+    const startUtc = formatUtcForRoboScout(centerUtcMs - ROBOSCOUT_WINDOW_MS);
+    const endUtc = formatUtcForRoboScout(centerUtcMs + ROBOSCOUT_WINDOW_MS);
+    const params = {
+      associateLogin: aaLogin,
+      current_day: 'false',
+      startDateTime: startUtc,
+      endDateTime: endUtc,
+      viz: 'nvd3Table',
+      instance_id: '1927',
+      object_id: '19851',
+      BrowserTZ: 'Europe/Berlin',
+      app_name: 'RoboScout',
+      ...ROBOSCOUT_STATIC_PARAMS_API,
+    };
+    const qs = Object.entries(params)
+      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+      .join('&');
+    return `https://roboscout.amazon.com/view_plot_data/?sites=(ETZ2)&${qs}`;
+  }
+
+  // Cherche récursivement, dans n'importe quelle structure JSON imbriquée (tableau ou
+  // objet), toutes les entrées qui ont la forme {key: keyName, ...} et les retourne.
+  // Utilisé car on ne connaît pas encore la profondeur exacte de nesting de la réponse
+  // (seul un extrait ponctuel {key:"Station_Id", xValue:"...", yValue:"2133", ...} a été
+  // observé) — cette approche est robuste peu importe où c'est niché.
+  function findEntriesByKey(node, keyName, out = []) {
+    if (!node || typeof node !== 'object') return out;
+    if (Array.isArray(node)) {
+      for (const item of node) findEntriesByKey(item, keyName, out);
+    } else {
+      if (node.key === keyName) out.push(node);
+      for (const v of Object.values(node)) {
+        if (v && typeof v === 'object') findEntriesByKey(v, keyName, out);
+      }
+    }
+    return out;
+  }
+
+  // Wrapper Promise autour de GM_xmlhttpRequest (nécessaire car roboscout.amazon.com
+  // est un domaine différent de fcresearch-eu.aka.amazon.com -> pas de fetch() direct
+  // possible à cause du CORS, et un iframe caché ne fonctionnerait pas non plus car
+  // on ne peut pas lire le contentDocument d'un iframe cross-origin).
+  function gmFetch(url) {
+    return new Promise((resolve, reject) => {
+      if (typeof GM_xmlhttpRequest !== 'function') {
+        reject(new Error('GM_xmlhttpRequest indisponible (vérifier @grant dans l\'entête du script)'));
+        return;
+      }
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url,
+        onload: res => resolve(res),
+        onerror: err => reject(new Error('GM_xmlhttpRequest erreur réseau: ' + JSON.stringify(err))),
+        ontimeout: () => reject(new Error('GM_xmlhttpRequest timeout')),
+        timeout: 20000,
+      });
+    });
+  }
+
+  // Extrait le login AA d'un code container de type "pc99jeanbayd" -> "jeanbayd".
+  // Ce type de code n'encode pas directement une station physique : il faudra
+  // interroger RoboScout (Associate_Name / Station_Id) sur une fenêtre de temps
+  // autour de la date du mouvement pour retrouver la vraie station. Voir
+  // resolveStationViaRoboScout() plus bas (en attente du format d'URL exact).
+  function extractAaLogin(containerCode) {
+    if (!containerCode) return null;
+    const m = containerCode.match(/^pc99(.+)$/i);
+    return m ? m[1] : null;
+  }
+
+  // Interroge l'API JSON RoboScout (view_plot_data, login AA + fenêtre ±15 min autour
+  // de matchDateStr) et en extrait le Station_Id.
+  async function resolveStationViaRoboScout(aaLogin, matchDateStr) {
+    const url = buildRoboScoutApiUrl(aaLogin, matchDateStr);
+    if (!url) {
+      console.warn('FCR Trace: impossible de construire l\'URL RoboScout pour', aaLogin, matchDateStr);
+      return null;
+    }
+    console.log('FCR Trace: requête RoboScout ->', url);
+
+    const res = await gmFetch(url);
+    console.log(`FCR Trace: RoboScout réponse HTTP ${res.status}, ${res.responseText.length} caractères.`);
+
+    let data;
+    try {
+      data = JSON.parse(res.responseText);
+    } catch (e) {
+      console.warn('FCR Trace: réponse RoboScout non-JSON (probablement une page de login -> problème de cookies/auth).', res.responseText.slice(0, 300));
+      return null;
+    }
+
+    const entries = findEntriesByKey(data, 'Station_Id');
+    console.log('FCR Trace: entrées Station_Id trouvées =', entries);
+    if (!entries.length) {
+      console.warn('FCR Trace: aucune entrée "Station_Id" dans la réponse RoboScout pour', aaLogin);
+      return null;
+    }
+
+    // Filtre optionnel par login si plusieurs entrées (au cas où la fenêtre de temps
+    // couvre plusieurs sessions) : xValue est du type "Nom:login:floor:...:stationId".
+    const matching = entries.filter(e => (e.xValue || '').toLowerCase().includes(aaLogin.toLowerCase()));
+    const chosen = (matching.length ? matching : entries)[0];
+    return chosen.yValue || null;
+  }
+
+  /* =========================================================
+   *  RECUPERATION DE L'HISTORIQUE INVENTAIRE (page AA courante)
+   * ========================================================= */
+
+  // Format d'affichage des champs Start date / End date observé sur la capture
+  // ("07/06/202x"). A AJUSTER si le format réel est DD/MM/YYYY plutôt que MM/DD/YYYY
+  // une fois vérifié sur la vraie page (ex: en tapant une date sans ambiguïté comme
+  // le 25 d'un mois, si le champ l'accepte, on saura vite lequel des deux c'est).
+  const DATE_INPUT_FORMAT = 'MM/DD/YYYY';
+
+  function isoToDisplayDate(iso, format = DATE_INPUT_FORMAT) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+    if (!m) return null;
+    const [, y, mo, d] = m;
+    return format === 'DD/MM/YYYY' ? `${d}/${mo}/${y}` : `${mo}/${d}/${y}`;
+  }
+
+  // Pose la valeur d'un <input> "à la React" : passe par le setter natif du prototype
+  // HTMLInputElement plutôt que input.value = ... directement, car beaucoup de widgets
+  // contrôlés (React/Cloudscape) ignorent une simple affectation .value et n'écoutent
+  // que l'event "input"/"change" déclenché après ce setter natif.
+  function setNativeInputValue(input, value) {
+    const win = input.ownerDocument.defaultView || window;
+    const setter = Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, 'value');
+    if (setter && setter.set) setter.set.call(input, value);
+    else input.value = value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  // Retrouve l'input associé à un libellé visible ("Start date", "End date"...).
+  // Stratégie par ordre de fiabilité décroissante :
+  //  1) <label for="..."> pointant vers l'input (cas standard le plus fiable)
+  //  2) input imbriqué dans le même bloc que le libellé (jusqu'à 4 niveaux de parenté)
+  //  3) input[aria-label="..."] correspondant exactement
+  function findInputByLabel(doc, labelText) {
+    const target = labelText.trim().toLowerCase();
+    const labels = Array.from(doc.querySelectorAll('label'));
+    for (const lbl of labels) {
+      const text = (lbl.textContent || '').trim().toLowerCase();
+      if (text !== target && !text.startsWith(target)) continue;
+      const forId = lbl.getAttribute('for');
+      if (forId) {
+        const input = doc.getElementById(forId);
+        if (input) return input;
+      }
+      let container = lbl;
+      for (let i = 0; i < 4 && container; i++) {
+        const input = container.querySelector('input');
+        if (input) return input;
+        container = container.parentElement;
+      }
+    }
+    const byAria = Array.from(doc.querySelectorAll('input[aria-label]')).find(
+      i => (i.getAttribute('aria-label') || '').trim().toLowerCase() === target
+    );
+    return byAria || null;
+  }
+
+  // Retrouve un bouton (ou lien-bouton) par son texte visible exact (ex: "Search").
+  function findButtonByText(doc, text) {
+    const target = text.trim().toLowerCase();
+    const candidates = Array.from(doc.querySelectorAll('button, a, input[type="submit"], input[type="button"]'));
+    return candidates.find(b => (b.textContent || b.value || '').trim().toLowerCase() === target) || null;
+  }
+
+  // Renseigne Start date + End date sur la date demandée puis clique "Search", AVANT
+  // de scraper la table — sinon on scrape la période par défaut affichée à l'ouverture
+  // de la page (souvent différente de la date qu'on veut analyser), ce qui donne
+  // l'impression que le script "ne trouve rien" alors que les données existent bien.
+  // Si les champs/bouton sont introuvables (sélecteurs à ajuster sur la vraie page),
+  // on n'échoue pas : on se contente d'avertir et de scraper la période déjà affichée.
+  async function applyDateRangeAndSearch(doc, dateFilterISO, log) {
+    if (!dateFilterISO) return; // pas de date précisée -> on garde la période par défaut
+
+    const displayDate = isoToDisplayDate(dateFilterISO);
+    if (!displayDate) return;
+
+    let startInput, endInput, searchBtn;
+    try {
+      await waitFor(() => {
+        startInput = findInputByLabel(doc, 'start date');
+        endInput = findInputByLabel(doc, 'end date');
+        searchBtn = findButtonByText(doc, 'search');
+        return startInput && endInput && searchBtn ? true : null;
+      }, { timeout: 10000, interval: 200 });
+    } catch (e) {
+      const msg = '⚠️ Champs Start/End date ou bouton Search introuvables (sélecteurs à ajuster) : scraping de la période déjà affichée par défaut.';
+      log && log(msg);
+      console.warn('FCR Trace:', msg, e);
+      return;
+    }
+
+    const existingTable = findTableById(doc, 'table-inventory-history', ['old bin', 'new bin']);
+    const beforeSignature = existingTable
+      ? (existingTable.querySelector('tbody') || existingTable).textContent.slice(0, 300)
+      : '__none__';
+
+    setNativeInputValue(startInput, displayDate);
+    setNativeInputValue(endInput, displayDate);
+    searchBtn.click();
+
+    log && log(`⏳ Période ${displayDate} appliquée (Start/End date), rechargement du tableau...`);
+
+    try {
+      await waitFor(() => {
+        const t = findTableById(doc, 'table-inventory-history', ['old bin', 'new bin']);
+        if (!t) return null;
+        const sig = (t.querySelector('tbody') || t).textContent.slice(0, 300);
+        return sig !== beforeSignature ? true : null;
+      }, { timeout: 5000, interval: 200 });
+    } catch (e) {
+      // Peut aussi vouloir dire "la période était déjà la bonne" (contenu identique) :
+      // pas bloquant, on scrape simplement ce qui est affiché juste après.
+      console.warn('FCR Trace: le tableau ne semble pas avoir changé après le clic Search (peut-être déjà la bonne période).', e);
+    }
+  }
+
+  async function scrapeInventoryTable(doc, dateFilterISO, log) {
+    await applyDateRangeAndSearch(doc, dateFilterISO, log);
+
+    const table = await waitFor(
+      () => findTableById(doc, 'table-inventory-history', ['old bin', 'new bin']),
+      { timeout: 20000 }
+    );
+    const { rows: rawRows, indexOf } = await expandAndScrapeTable(table, log);
+
+    const iDate = indexOf('date');
+    const iOp = indexOf('op');
+    const iAsin = indexOf('asin');
+    const iOldBin = indexOf('old bin');
+    const iNewBin = indexOf('new bin');
+
+    if (iDate === -1 || iOldBin === -1 || iNewBin === -1) {
+      throw new Error(
+        'Colonnes Date/Old Bin/New Bin introuvables (voir console pour la liste des titres détectés).'
+      );
+    }
+
+    const mapped = rawRows.map(r => ({
+      date: r[iDate] || '',
+      op: iOp > -1 ? r[iOp] : '',
+      asin: iAsin > -1 ? r[iAsin] : '',
+      oldBin: r[iOldBin] || '',
+      newBin: r[iNewBin] || '',
+    }));
+
+    const afterDate = mapped.filter(r => !dateFilterISO || r.date.startsWith(dateFilterISO));
+    const afterTote = afterDate.filter(r => TOTE_REGEX.test(r.oldBin) || TOTE_REGEX.test(r.newBin));
+
+    log && log(`${rawRows.length} ligne(s) brute(s) → ${afterDate.length} après filtre date → ${afterTote.length} avec une tote.`);
+    console.log('FCR Trace: exemple mapped[0] =', mapped[0]);
+
+    return afterTote;
+  }
+
+  // Historique inventaire de l'AA dont on est en train de consulter la page (cas normal).
+  async function getInventoryRows(dateFilterISO, log) {
+    return scrapeInventoryTable(document, dateFilterISO, log);
+  }
+
+  // Historique inventaire d'un AUTRE AA, identifié uniquement par son login : on charge
+  // sa page FCResearch dans un iframe caché (même mécanisme que pour l'historique
+  // container d'une tote plus bas) et on scrape la même table à l'intérieur — permet de
+  // lancer une analyse complète juste avec "login + date", sans naviguer manuellement
+  // sur la page de ce sweeper.
+  async function getInventoryRowsForLogin(login, dateFilterISO, log) {
+    log && log(`⏳ Chargement de la page FCResearch de "${login}" (en arrière-plan)...`);
+    const iframe = await loadInHiddenIframe(BASE_URL + encodeURIComponent(login));
+    try {
+      const idoc = iframe.contentDocument;
+      return await scrapeInventoryTable(idoc, dateFilterISO, log);
+    } catch (e) {
+      throw new Error(`Historique inventaire introuvable pour le login "${login}" (vérifier l'orthographe du login, ou timeout) : ${e.message}`);
+    } finally {
+      iframe.remove();
+    }
+  }
+
+  /* =========================================================
+   *  RECUPERATION DE L'HISTORIQUE CONTAINER (page tote, via iframe)
+   *  (loadInHiddenIframe est aussi réutilisé par getInventoryRowsForLogin ci-dessus)
+   * ========================================================= */
+
+  // On ne veut PAS attendre l'event "load" (il n'arrive qu'une fois TOUTES les
+  // ressources chargées : images, trackers, etc. — souvent plusieurs secondes de
+  // perdues pour rien puisqu'on ne s'intéresse qu'à un tableau React qui, lui, est
+  // monté bien avant). On poll donc iframe.contentDocument.readyState à la place :
+  // dès qu'il quitte "loading" (et que l'URL n'est plus about:blank, càd que la
+  // navigation a bien démarré), on résout avec l'iframe. Le waitFor() du tableau,
+  // appelé juste après par l'appelant, se charge d'attendre le rendu réel des lignes.
+  // ATTENTION: on ne capture PAS contentDocument dans une variable ici et on ne
+  // resolve jamais avant que readyState confirme la navigation — sinon on risque de
+  // renvoyer le document "about:blank" initial, qui devient une référence morte dès
+  // que l'iframe navigue vraiment (bug classique de "document périmé").
+  function loadInHiddenIframe(url) {
+    return new Promise((resolve, reject) => {
+      const iframe = document.createElement('iframe');
+      iframe.style.cssText =
+        'position:fixed;top:-3000px;left:-3000px;width:1400px;height:900px;border:0;';
+      iframe.src = url;
+      document.body.appendChild(iframe);
+
+      let settled = false;
+      let offReady = null;
+      const settle = (fn, arg) => {
+        if (settled) return;
+        settled = true;
+        if (offReady) offReady();
+        fn(arg);
+      };
+
+      offReady = onHeartbeat(() => {
+        let doc;
+        try {
+          doc = iframe.contentDocument;
+        } catch (e) {
+          return; // accès refusé temporairement pendant la transition -> on réessaie au prochain tick
+        }
+        if (doc && doc.readyState !== 'loading' && doc.location.href !== 'about:blank') {
+          settle(resolve, iframe);
+        }
+      });
+
+      iframe.onerror = e => settle(reject, e);
+      heartbeatDelay(() => settle(reject, new Error('iframe timeout: ' + url)), 20000);
+    });
+  }
+
+  // `earliestTargetDateStr` (optionnel) : date FCR la plus ancienne parmi TOUS les
+  // mouvements d'inventaire qui référencent cette tote. Comme le tableau Container
+  // History est trié du plus récent au plus ancien, s'arrêter dès qu'on est passé sous
+  // cette date la plus ancienne garantit qu'on a chargé tout ce dont on a besoin pour
+  // matcher CHAQUE mouvement référençant la tote (les mouvements plus récents ont leur
+  // ligne de correspondance plus haut dans le tableau, donc déjà chargée avant ce point).
+  async function getContainerHistory(toteId, earliestTargetDateStr) {
+    const iframe = await loadInHiddenIframe(BASE_URL + encodeURIComponent(toteId));
+    try {
+      const table = await waitFor(
+        () => findTableById(iframe.contentDocument, 'table-container-history', ['old container', 'new container']),
+        { timeout: 15000 }
+      );
+      const { rows: rawRows, indexOf } = await expandAndScrapeTable(table, null, earliestTargetDateStr);
+      const iDate = indexOf('move date');
+      const iOld = indexOf('old container');
+      const iNew = indexOf('new container');
+
+      return rawRows.map(r => ({
+        date: iDate > -1 ? r[iDate] : '',
+        oldC: iOld > -1 ? r[iOld] : '',
+        newC: iNew > -1 ? r[iNew] : '',
+      }));
+    } finally {
+      iframe.remove();
+    }
+  }
+
+  /* =========================================================
+   *  MATCHING date inventaire <-> ligne container history
+   * ========================================================= */
+
+  function findClosestContainerMatch(targetDateStr, historyRows) {
+    const target = parseFcrDate(targetDateStr);
+    if (!target) return null;
+
+    let best = null;
+    let bestScore = Infinity;
+
+    for (const row of historyRows) {
+      const d = parseFcrDate(row.date);
+      if (!d) continue;
+      const signedDiff = target.getTime() - d.getTime(); // >0 si la ligne est AVANT le mouvement du sweeper
+      const absDiff = Math.abs(signedDiff);
+      const hasContainer = CONTAINER_REGEX.test(row.oldC) || CONTAINER_REGEX.test(row.newC);
+      // On privilégie la ligne PRECEDENTE la plus proche (comme observé manuellement dans
+      // Container History : la station se lit sur la ligne juste avant l'action du sweeper).
+      // Une ligne postérieure est fortement pénalisée mais reste choisie en dernier recours
+      // s'il n'existe aucune ligne précédente exploitable.
+      const futurePenalty = signedDiff < 0 ? 1e9 : 0;
+      const score = absDiff + futurePenalty + (hasContainer ? 0 : 1e12);
+      if (score < bestScore) {
+        bestScore = score;
+        best = { ...row, diffMs: absDiff, hasContainer };
+      }
+    }
+    if (best && best.diffMs > MATCH_WINDOW_MS) best.unreliable = true;
+    return best;
+  }
+
+  /* =========================================================
+   *  ORCHESTRATION
+   * ========================================================= */
+
+  const INACTIVITY_GAP_MIN_DEFAULT = 15; // seuil "temps sans action" par défaut (15 min)
+  const GM_KEY_INACTIVITY_MIN = 'fcr_inactivity_threshold_min';
+
+  // Seuil courant (en minutes), réglable depuis le panneau et persisté via GM_setValue
+  // pour être réutilisé automatiquement à la prochaine ouverture de la page.
+  let inactivityThresholdMin = INACTIVITY_GAP_MIN_DEFAULT;
+
+  function loadInactivityThresholdMin() {
+    try {
+      if (typeof GM_getValue === 'function') {
+        const stored = GM_getValue(GM_KEY_INACTIVITY_MIN, INACTIVITY_GAP_MIN_DEFAULT);
+        const n = Number(stored);
+        if (Number.isFinite(n) && n > 0) inactivityThresholdMin = n;
+      }
+    } catch (e) {
+      console.warn('FCR Trace: échec lecture GM_getValue seuil inactivité, repli sur défaut.', e);
+    }
+    return inactivityThresholdMin;
+  }
+
+  function saveInactivityThresholdMin(min) {
+    inactivityThresholdMin = min;
+    try {
+      if (typeof GM_setValue === 'function') GM_setValue(GM_KEY_INACTIVITY_MIN, min);
+    } catch (e) {
+      console.warn('FCR Trace: échec écriture GM_setValue seuil inactivité.', e);
+    }
+  }
+
+  // Construit un objet Date au même jour calendaire que `refDate`, à l'heure locale
+  // "HH:MM" donnée (utilisé pour positionner une pause configurée sur le bon jour).
+  function timeOnSameDay(refDate, hhmm) {
+    const [h, m] = hhmm.split(':').map(Number);
+    const d = new Date(refDate);
+    d.setHours(h, m, 0, 0);
+    return d;
+  }
+
+  function overlapMs(aStart, aEnd, bStart, bEnd) {
+    const start = Math.max(aStart.getTime(), bStart.getTime());
+    const end = Math.min(aEnd.getTime(), bEnd.getTime());
+    return Math.max(0, end - start);
+  }
+
+  // Durée totale (ms) que l'intervalle [from, to] passe à l'intérieur des pauses
+  // configurées (EXCLUDED_BREAKS), pour le jour de `from`.
+  function excludedBreakOverlapMs(from, to) {
+    let total = 0;
+    for (const b of EXCLUDED_BREAKS) {
+      const bStart = timeOnSameDay(from, b.start);
+      const bEnd = timeOnSameDay(from, b.end);
+      total += overlapMs(from, to, bStart, bEnd);
+    }
+    return total;
+  }
+
+  // Repère, dans la liste des actions inventaire brutes (une par mouvement de tote)
+  // triées chronologiquement, les écarts de temps >= 15 min entre deux actions
+  // consécutives. Calculé à partir des données de base, avant tout regroupement /
+  // dédoublonnage par tote. Le temps chevauchant une pause configurée (ex: 10h-10h30)
+  // est déduit de la durée avant comparaison au seuil : un arrêt qui correspond
+  // exactement à la pause déjeuner n'est donc pas remonté comme "temps sans action".
+  function computeInactivityGaps(sortedInvRows, thresholdMin = inactivityThresholdMin) {
+    const thresholdMs = thresholdMin * 60000;
+    const gaps = [];
+    for (let i = 1; i < sortedInvRows.length; i++) {
+      const prev = parseFcrDate(sortedInvRows[i - 1].date);
+      const cur = parseFcrDate(sortedInvRows[i].date);
+      if (!prev || !cur) continue;
+      const rawDiffMs = cur.getTime() - prev.getTime();
+      const excludedMs = excludedBreakOverlapMs(prev, cur);
+      const adjustedMs = rawDiffMs - excludedMs;
+      if (adjustedMs >= thresholdMs) {
+        gaps.push({
+          from: sortedInvRows[i - 1].date,
+          to: sortedInvRows[i].date,
+          durationMin: Math.round(adjustedMs / 60000),
+          excludedMin: excludedMs ? Math.round(excludedMs / 60000) : 0,
+        });
+      }
+    }
+    return gaps;
+  }
+
+  async function traceSweeper(dateFilterISO, onProgress, onLog, thresholdMin = inactivityThresholdMin, sourceLogin = null) {
+    const invRows = sourceLogin
+      ? await getInventoryRowsForLogin(sourceLogin, dateFilterISO, onLog)
+      : await getInventoryRows(dateFilterISO, onLog);
+    const uniqueTotes = [
+      ...new Set(invRows.flatMap(r => [r.oldBin, r.newBin]).filter(v => TOTE_REGEX.test(v))),
+    ];
+
+    // Date la plus ancienne, parmi tous les mouvements d'inventaire, référençant chaque
+    // tote — sert de borne d'arrêt anticipé au défilement de son Container History
+    // (voir getContainerHistory). Une tote peut apparaître à plusieurs dates dans
+    // invRows ; on doit couvrir la plus ancienne pour ne rater aucun match.
+    const toteEarliestDate = {};
+    for (const r of invRows) {
+      const tote = TOTE_REGEX.test(r.newBin) ? r.newBin : r.oldBin;
+      if (!TOTE_REGEX.test(tote)) continue;
+      if (!toteEarliestDate[tote] || r.date < toteEarliestDate[tote]) toteEarliestDate[tote] = r.date;
+    }
+
+    const toteCache = {};
+    let done = 0;
+    // 6 iframes en parallèle : le coût dominant est réseau/rendu (chargement de page),
+    // pas CPU, et le défilement s'arrête maintenant plus tôt (voir plus haut) -> on peut
+    // se permettre un peu plus de parallélisme qu'avant sans trop de risque de timeouts.
+    const TOTE_CONCURRENCY = 6;
+    await mapWithConcurrency(uniqueTotes, TOTE_CONCURRENCY, async tote => {
+      try {
+        toteCache[tote] = await getContainerHistory(tote, toteEarliestDate[tote]);
+      } catch (e) {
+        console.warn('FCR Trace: échec récupération historique pour', tote, e);
+        toteCache[tote] = [];
+      }
+      done++;
+      onProgress && onProgress(done, uniqueTotes.length, tote);
+    });
+
+    const results = invRows
+      .map(r => {
+        // priorité à la tote "New Bin" (destination du mouvement), sinon Old Bin
+        const tote = TOTE_REGEX.test(r.newBin) ? r.newBin : r.oldBin;
+        const history = toteCache[tote] || [];
+        const match = findClosestContainerMatch(r.date, history);
+        // On détecte les DEUX formats indépendamment (et non plus l'un OU l'autre) :
+        // - dzCode  : code station direct "dz-P-..." (fiable mais parfois absent/périmé)
+        // - pc99Code: conteneur personnel de l'AA -> permet d'extraire son login pour
+        //   interroger RoboScout, qui donne la VRAIE station en temps réel (priorisé
+        //   ci-dessous, voir enrichStationsViaRoboScout). Le code dz-P ne sert plus que
+        //   de repli si RoboScout ne renvoie rien pour ce login/cette fenêtre.
+        let dzCode = null;
+        let pc99Code = null;
+        if (match) {
+          const dzMatch = /dz-P-[A-Z]\d+/i.exec(`${match.oldC} ${match.newC}`);
+          if (dzMatch) dzCode = dzMatch[0];
+          const pcMatch = /pc99[\w-]+/i.exec(`${match.oldC} ${match.newC}`);
+          if (pcMatch) pc99Code = pcMatch[0];
+        }
+        const containerCode = pc99Code || dzCode;
+        const aaLogin = extractAaLogin(pc99Code);
+        return {
+          ...r,
+          tote,
+          matchDate: match ? match.date : null,
+          matchDiffSec: match ? Math.round(match.diffMs / 1000) : null,
+          matchUnreliable: match ? !!match.unreliable : true,
+          containerCode,
+          aaLogin,
+          // "station" par défaut = le code dz-P direct s'il existe, sinon le code pc99
+          // brut (pas exploitable tel quel). RoboScout est tenté juste après dès qu'un
+          // aaLogin est disponible et, s'il répond, ÉCRASE cette valeur par défaut —
+          // c'est donc RoboScout qui a la priorité finale sur la résolution de station.
+          station: dzCode || pc99Code,
+        };
+      })
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+    // Marque la 1ère ligne de chaque "bloc" de lignes successives partageant la même
+    // tote. Les lignes suivantes du même bloc n'ont pas besoin d'être résolues
+    // séparément (ni re-matchées, ni requêtées sur RoboScout séparément) : une fois
+    // la localisation trouvée pour une tote, on considère que c'est la même pour
+    // les lignes successives de cette tote (cf. propagateBlockStations plus bas).
+    for (let i = 0; i < results.length; i++) {
+      results[i].isBlockStart = i === 0 || results[i].tote !== results[i - 1].tote;
+    }
+
+    const gaps = computeInactivityGaps(
+      invRows.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
+      thresholdMin
+    );
+
+    return { results, gaps };
+  }
+
+  // Propage la station résolue de la 1ère ligne d'un bloc (lignes successives d'une
+  // même tote) vers toutes les lignes suivantes du même bloc.
+  function propagateBlockStations(results) {
+    let current = null;
+    for (const r of results) {
+      if (r.isBlockStart) {
+        current = r;
+      } else if (current) {
+        r.station = current.station;
+        r.containerCode = current.containerCode;
+        r.matchUnreliable = current.matchUnreliable;
+        r.inheritedLocation = true;
+      }
+    }
+    return results;
+  }
+
+  // 2e passe (PRIORITAIRE sur le code dz-P direct) : pour toute ligne où un login
+  // AA a pu être extrait (code pc99xxxxx présent dans le match, qu'un code dz-P ait
+  // aussi été trouvé ou non), on interroge RoboScout avec ce login + une fenêtre de
+  // temps autour de la date de match, pour retrouver la vraie station (Station_Id).
+  // Si RoboScout répond, sa valeur écrase le "station" par défaut (dz-P ou pc99 brut) ;
+  // si RoboScout ne répond pas / échoue, on garde le repli déjà en place (dz-P sinon rien).
+  async function enrichStationsViaRoboScout(results, onProgress) {
+    // On ne résout via RoboScout que la 1ère ligne de chaque bloc de lignes
+    // successives d'une même tote : les lignes suivantes hériteront du résultat
+    // (voir propagateBlockStations), inutile de refaire un appel réseau par ligne.
+    const needResolve = results.filter(r => r.isBlockStart && r.aaLogin && r.matchDate);
+    let done = 0;
+    // Simples requêtes réseau (pas d'iframe/page complète) : concurrence plus élevée
+    // que pour les totes, sans trop solliciter RoboScout non plus.
+    const ROBOSCOUT_CONCURRENCY = 6;
+    await mapWithConcurrency(needResolve, ROBOSCOUT_CONCURRENCY, async r => {
+      try {
+        const resolved = await resolveStationViaRoboScout(r.aaLogin, r.matchDate);
+        if (resolved) r.station = resolved;
+      } catch (e) {
+        console.warn('FCR Trace: échec résolution RoboScout pour', r.aaLogin, e);
+      }
+      done++;
+      onProgress && onProgress(done, needResolve.length, r.aaLogin);
+    });
+    propagateBlockStations(results);
+    return results;
+  }
+
+  /* =========================================================
+   *  UI
+   * ========================================================= */
+
+  const PANEL_CSS = `
+    #fcr-trace-panel {
+      --fcr-bg: #17181c;
+      --fcr-bg-alt: #1f2127;
+      --fcr-border: #2e313a;
+      --fcr-text: #e6e7eb;
+      --fcr-muted: #8a8f9c;
+      --fcr-accent: #4f8ff7;
+      --fcr-accent-dim: #2d4a80;
+      --fcr-warn: #e8a83c;
+      --fcr-good: #3ecf8e;
+      position: fixed; bottom: 16px; right: 16px; z-index: 999999;
+      width: 460px; max-height: 82vh; overflow: auto;
+      background: var(--fcr-bg); color: var(--fcr-text);
+      font: 12.5px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      border: 1px solid var(--fcr-border); border-radius: 10px;
+      box-shadow: 0 8px 28px rgba(0,0,0,.55);
+    }
+    #fcr-trace-panel * { box-sizing: border-box; }
+    #fcr-trace-panel code, #fcr-trace-panel .fcr-mono { font-family: "JetBrains Mono", Menlo, monospace; }
+    #fcr-trace-header {
+      padding: 10px 14px; background: linear-gradient(180deg, #22242b, #1b1d23);
+      border-bottom: 1px solid var(--fcr-border);
+      display: flex; justify-content: space-between; align-items: center; cursor: move;
+      border-radius: 10px 10px 0 0;
+    }
+    #fcr-trace-header strong { font-size: 13px; letter-spacing: .2px; }
+    #fcr-trace-collapse {
+      background: none; border: none; color: var(--fcr-muted); cursor: pointer;
+      font-size: 14px; line-height: 1; padding: 2px 6px; border-radius: 4px;
+    }
+    #fcr-trace-collapse:hover { background: var(--fcr-bg-alt); color: var(--fcr-text); }
+    #fcr-trace-body { padding: 12px 14px; }
+    .fcr-controls { display: flex; gap: 8px; margin-bottom: 10px; }
+    #fcr-trace-date {
+      flex: 1; background: var(--fcr-bg-alt); color: var(--fcr-text);
+      border: 1px solid var(--fcr-border); border-radius: 6px; padding: 6px 8px;
+    }
+    #fcr-trace-go {
+      background: var(--fcr-accent); color: #fff; border: none; padding: 6px 14px;
+      border-radius: 6px; cursor: pointer; font-weight: 600;
+    }
+    #fcr-trace-go:hover { filter: brightness(1.08); }
+    #fcr-trace-status { color: var(--fcr-muted); margin-bottom: 10px; min-height: 16px; }
+    #fcr-trace-export {
+      display: none; margin-top: 10px; background: var(--fcr-bg-alt); color: var(--fcr-text);
+      border: 1px solid var(--fcr-border); padding: 6px 10px; border-radius: 6px; cursor: pointer;
+    }
+    #fcr-trace-export:hover { border-color: var(--fcr-accent); color: var(--fcr-accent); }
+
+    .fcr-table { width: 100%; border-collapse: collapse; }
+    .fcr-table thead th {
+      position: sticky; top: 0; background: var(--fcr-bg);
+      color: var(--fcr-muted); text-align: left; font-weight: 600;
+      padding: 5px 6px; border-bottom: 1px solid var(--fcr-border); font-size: 11px;
+      text-transform: uppercase; letter-spacing: .4px;
+    }
+    .fcr-row { border-bottom: 1px solid rgba(255,255,255,.04); }
+    .fcr-row:hover { background: var(--fcr-bg-alt); }
+    .fcr-row td { padding: 6px 6px; vertical-align: middle; }
+    .fcr-time { white-space: nowrap; color: var(--fcr-muted); font-family: "JetBrains Mono", Menlo, monospace; font-size: 11.5px; }
+    .fcr-tote { font-family: "JetBrains Mono", Menlo, monospace; font-size: 11.5px; color: var(--fcr-text); }
+    .fcr-station-pill {
+      display: inline-block; font-family: "JetBrains Mono", Menlo, monospace;
+      font-weight: 700; font-size: 12.5px; color: #fff;
+      background: var(--fcr-accent-dim); border: 1px solid var(--fcr-accent);
+      border-radius: 5px; padding: 1px 8px;
+    }
+    .fcr-count-badge {
+      cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: 2px;
+      background: var(--fcr-accent); color: #fff; border-radius: 9px;
+      padding: 0 7px; font-size: 10.5px; font-weight: 700; margin-left: 6px;
+      vertical-align: middle;
+    }
+    .fcr-count-badge:hover { filter: brightness(1.1); }
+    .fcr-detail-row td { padding: 0; background: rgba(255,255,255,.02); }
+    .fcr-detail-table { width: 100%; border-collapse: collapse; }
+    .fcr-detail-table td { padding: 3px 6px 3px 26px; color: var(--fcr-muted); font-size: 11.5px; }
+    .fcr-detail-table .fcr-time { color: #9fb4d8; }
+
+    .fcr-gaps-card {
+      margin-top: 14px; padding: 10px 12px; background: var(--fcr-bg-alt);
+      border: 1px solid var(--fcr-border); border-radius: 8px;
+    }
+    .fcr-gaps-title {
+      color: var(--fcr-warn); font-weight: 700; font-size: 12px;
+      display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+    }
+    .fcr-gaps-note { color: var(--fcr-muted); font-size: 10.5px; margin-bottom: 6px; }
+    .fcr-gap-duration { color: var(--fcr-warn); font-weight: 700; font-family: "JetBrains Mono", Menlo, monospace; }
+    .fcr-empty { color: var(--fcr-muted); font-style: italic; }
+
+    .fcr-threshold-row {
+      display: flex; align-items: center; gap: 6px; margin-bottom: 10px;
+      color: var(--fcr-muted); font-size: 11.5px;
+    }
+    .fcr-threshold-row input {
+      width: 52px; background: var(--fcr-bg-alt); color: var(--fcr-text);
+      border: 1px solid var(--fcr-border); border-radius: 6px; padding: 4px 6px;
+      text-align: center;
+    }
+
+    .fcr-section-divider {
+      margin: 14px 0 10px; padding-top: 10px; border-top: 1px solid var(--fcr-border);
+      color: var(--fcr-muted); font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .4px; display: flex; align-items: center; gap: 6px;
+    }
+    .fcr-direct-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .fcr-direct-controls input {
+      background: var(--fcr-bg-alt); color: var(--fcr-text);
+      border: 1px solid var(--fcr-border); border-radius: 6px; padding: 6px 8px;
+    }
+    #fcr-direct-login { flex: 1 1 140px; min-width: 100px; }
+    #fcr-direct-date { flex: 1 1 130px; }
+    #fcr-direct-go {
+      background: var(--fcr-bg-alt); color: var(--fcr-text); border: 1px solid var(--fcr-border);
+      padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600;
+    }
+    #fcr-direct-go:hover { border-color: var(--fcr-accent); color: var(--fcr-accent); }
+    #fcr-direct-status { color: var(--fcr-muted); min-height: 16px; margin-bottom: 8px; }
+    #fcr-direct-export {
+      display: none; margin-top: 10px; background: var(--fcr-bg-alt); color: var(--fcr-text);
+      border: 1px solid var(--fcr-border); padding: 6px 10px; border-radius: 6px; cursor: pointer;
+    }
+    #fcr-direct-export:hover { border-color: var(--fcr-accent); color: var(--fcr-accent); }
+  `;
+
+  function injectPanelCss() {
+    if (document.getElementById('fcr-trace-css')) return;
+    const style = document.createElement('style');
+    style.id = 'fcr-trace-css';
+    style.textContent = PANEL_CSS;
+    document.head.appendChild(style);
+  }
+
+  function buildPanel() {
+    injectPanelCss();
+    const panel = document.createElement('div');
+    panel.id = 'fcr-trace-panel';
+    panel.innerHTML = `
+      <div id="fcr-trace-header">
+        <strong>🕵️ FCR Trace Sweeper</strong>
+        <button id="fcr-trace-collapse" title="Réduire / agrandir">—</button>
+      </div>
+      <div id="fcr-trace-body">
+        <div class="fcr-controls">
+          <input type="date" id="fcr-trace-date">
+          <button id="fcr-trace-go">Tracer</button>
+        </div>
+        <div class="fcr-threshold-row">
+          <span>⏸ Seuil "temps sans action" :</span>
+          <input type="number" id="fcr-trace-threshold" min="1" step="1">
+          <span>min</span>
+        </div>
+        <div id="fcr-trace-status"></div>
+        <div id="fcr-trace-results"></div>
+        <button id="fcr-trace-export">⬇ Exporter CSV</button>
+
+        <div class="fcr-section-divider">🔎 Analyser un AA directement (login + date, sans naviguer sur sa page)</div>
+        <div class="fcr-direct-controls">
+          <input type="text" id="fcr-direct-login" placeholder="login AA (ex: jeanbayd)">
+          <input type="date" id="fcr-direct-date">
+          <button id="fcr-direct-go">Analyser</button>
+        </div>
+        <div id="fcr-direct-status"></div>
+        <div id="fcr-direct-results"></div>
+        <button id="fcr-direct-export">⬇ Exporter CSV</button>
+      </div>
+    `;
+    document.body.appendChild(panel);
+
+    // date par défaut = aujourd'hui (pour le traçage ET la recherche directe)
+    const today = new Date().toISOString().slice(0, 10);
+    panel.querySelector('#fcr-trace-date').value = today;
+    panel.querySelector('#fcr-direct-date').value = today;
+
+    // seuil d'inactivité : chargé depuis GM_getValue (ou défaut 15 min), et sauvegardé
+    // via GM_setValue à chaque modification pour être réutilisé aux prochaines analyses.
+    const thresholdInput = panel.querySelector('#fcr-trace-threshold');
+    thresholdInput.value = loadInactivityThresholdMin();
+    thresholdInput.addEventListener('change', () => {
+      const n = Number(thresholdInput.value);
+      if (Number.isFinite(n) && n > 0) {
+        saveInactivityThresholdMin(n);
+      } else {
+        thresholdInput.value = inactivityThresholdMin; // valeur invalide -> on revient à la dernière valeur valide
+      }
+    });
+
+    // collapse/expand
+    const body = panel.querySelector('#fcr-trace-body');
+    panel.querySelector('#fcr-trace-collapse').addEventListener('click', () => {
+      body.style.display = body.style.display === 'none' ? 'block' : 'none';
+    });
+
+    // drag basique
+    makeDraggable(panel, panel.querySelector('#fcr-trace-header'));
+
+    let lastResults = [];
+    let lastGaps = [];
+    let lastThresholdMin = inactivityThresholdMin;
+
+    let lastDirectResults = [];
+    let lastDirectGaps = [];
+    let lastDirectThresholdMin = inactivityThresholdMin;
+
+    // Lance le pipeline complet (inventaire -> totes -> container history -> station,
+    // avec résolution RoboScout priorisée) soit sur la page AA courante (sourceLogin
+    // null), soit sur celle d'un AUTRE AA chargée en arrière-plan via son login.
+    async function runAnalysis({ dateVal, sourceLogin, statusEl, resultsEl, exportBtn, onDone }) {
+      resultsEl.innerHTML = '';
+      exportBtn.style.display = 'none';
+      statusEl.textContent = sourceLogin
+        ? `⏳ Chargement de la page de "${sourceLogin}" en arrière-plan...`
+        : '⏳ Lecture de l\'historique inventaire...';
+
+      const thresholdMin = inactivityThresholdMin;
+      try {
+        const { results, gaps } = await traceSweeper(
+          dateVal,
+          (done, total, tote) => {
+            statusEl.textContent = `⏳ Analyse tote ${done}/${total} (${tote})...`;
+          },
+          msg => {
+            statusEl.textContent = msg;
+          },
+          thresholdMin,
+          sourceLogin
+        );
+        statusEl.textContent = '⏳ Résolution des stations (RoboScout)...';
+        await enrichStationsViaRoboScout(results, (done, total, login) => {
+          statusEl.textContent = `⏳ Résolution station ${done}/${total} (${login})...`;
+        });
+
+        // On retire les lignes dont la localisation finale est restée un code
+        // "pc99xxxxx" brut (résolution RoboScout échouée ou impossible) : ce n'est
+        // pas une station physique exploitable.
+        const filtered = results.filter(r => !(r.station && /^pc99/i.test(r.station)));
+
+        const groups = buildGroups(filtered);
+        const removedCount = results.length - filtered.length;
+        statusEl.textContent = `✅ ${filtered.length} mouvement(s) tracé(s) (${groups.length} localisation(s) distincte(s))` +
+          (removedCount ? `, ${removedCount} ligne(s) non localisée(s) retirée(s).` : '.');
+        renderResults(resultsEl, groups, gaps, thresholdMin);
+        exportBtn.style.display = filtered.length ? 'inline-block' : 'none';
+        onDone && onDone(filtered, gaps, thresholdMin);
+      } catch (e) {
+        console.error('FCR Trace Sweeper:', e);
+        statusEl.textContent = '❌ Erreur: ' + e.message + ' (voir console)';
+      }
+    }
+
+    panel.querySelector('#fcr-trace-go').addEventListener('click', () => {
+      runAnalysis({
+        dateVal: panel.querySelector('#fcr-trace-date').value,
+        sourceLogin: null,
+        statusEl: panel.querySelector('#fcr-trace-status'),
+        resultsEl: panel.querySelector('#fcr-trace-results'),
+        exportBtn: panel.querySelector('#fcr-trace-export'),
+        onDone: (filtered, gaps, thresholdMin) => {
+          lastResults = filtered;
+          lastGaps = gaps;
+          lastThresholdMin = thresholdMin;
+        },
+      });
+    });
+
+    panel.querySelector('#fcr-trace-export').addEventListener('click', () => {
+      exportCsv(lastResults, lastGaps, lastThresholdMin);
+    });
+
+    // --- Analyse directe d'un AA distant (login + date), sans naviguer sur sa page :
+    // même pipeline complet que le bouton "Tracer" ci-dessus, mais l'historique
+    // inventaire est chargé pour le login indiqué via un iframe caché.
+    panel.querySelector('#fcr-direct-go').addEventListener('click', () => {
+      const login = panel.querySelector('#fcr-direct-login').value.trim();
+      const dateVal = panel.querySelector('#fcr-direct-date').value;
+      const statusEl = panel.querySelector('#fcr-direct-status');
+
+      if (!login) {
+        statusEl.textContent = '⚠️ Renseigner un login AA.';
+        return;
+      }
+      if (!dateVal) {
+        statusEl.textContent = '⚠️ Renseigner une date.';
+        return;
+      }
+
+      runAnalysis({
+        dateVal,
+        sourceLogin: login,
+        statusEl,
+        resultsEl: panel.querySelector('#fcr-direct-results'),
+        exportBtn: panel.querySelector('#fcr-direct-export'),
+        onDone: (filtered, gaps, thresholdMin) => {
+          lastDirectResults = filtered;
+          lastDirectGaps = gaps;
+          lastDirectThresholdMin = thresholdMin;
+        },
+      });
+    });
+
+    panel.querySelector('#fcr-direct-export').addEventListener('click', () => {
+      exportCsv(lastDirectResults, lastDirectGaps, lastDirectThresholdMin);
+    });
+  }
+
+  // Regroupe les lignes successives (déjà triées chronologiquement) partageant la
+  // même tote en un seul "groupe" affichable, avec un compteur d'occurrences et le
+  // détail dépliable des lignes individuelles.
+  function buildGroups(results) {
+    const groups = [];
+    for (const r of results) {
+      const last = groups[groups.length - 1];
+      if (last && last.tote === r.tote) {
+        last.rows.push(r);
+        last.lastDate = r.date;
+      } else {
+        groups.push({ tote: r.tote, station: r.station, firstDate: r.date, lastDate: r.date, rows: [r] });
+      }
+    }
+    return groups;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  // Raccourcit un code station en ne gardant que sa partie numérique finale.
+  // Ex: "dz-P-A2148" -> "2148", "A2133" -> "2133". Si aucun nombre n'est trouvé,
+  // renvoie le code tel quel (fallback pour un format inattendu).
+  function formatStationLabel(station) {
+    if (!station) return station;
+    const m = String(station).match(/(\d+)\D*$/);
+    return m ? m[1] : station;
+  }
+
+  // Formate un nombre de minutes en "1h23min" (ou "45min" si < 1h).
+  function formatDurationMin(totalMin) {
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    return h > 0 ? `${h}h${String(m).padStart(2, '0')}min` : `${m}min`;
+  }
+
+  function renderResults(container, groups, gaps, thresholdMin = inactivityThresholdMin) {
+    if (!groups.length) {
+      container.innerHTML = '<span class="fcr-empty">Aucun mouvement de tote trouvé pour cette date.</span>';
+      return;
+    }
+
+    const bodyRows = groups
+      .map((g, gi) => {
+        const first = g.rows[0];
+        const stationRaw = g.station || first.containerCode || '?';
+        const stationLabel = formatStationLabel(stationRaw);
+        const unreliableTitle = first.matchUnreliable
+          ? ' title="Match peu fiable (écart temporel important ou pas de code trouvé)"'
+          : '';
+        const count = g.rows.length;
+        const badge = count > 1
+          ? `<span class="fcr-count-badge" data-toggle="${gi}" title="Cliquer pour voir le détail">${count}× ▾</span>`
+          : '';
+        const detailRows = g.rows
+          .map(
+            r => `
+              <tr>
+                <td class="fcr-time">${r.date.slice(11)}</td>
+                <td>${escapeHtml(r.asin || '')}</td>
+              </tr>`
+          )
+          .join('');
+        const detailBlock = count > 1
+          ? `<tr class="fcr-detail-row" id="fcr-trace-detail-${gi}" style="display:none;"><td colspan="4">
+               <table class="fcr-detail-table"><tbody>${detailRows}</tbody></table>
+             </td></tr>`
+          : '';
+        return `
+          <tr class="fcr-row"${unreliableTitle}>
+            <td class="fcr-time">${g.firstDate.slice(11)}${count > 1 ? ' → ' + g.lastDate.slice(11) : ''}</td>
+            <td>${escapeHtml(first.asin || '')}</td>
+            <td class="fcr-tote">${escapeHtml(g.tote)}${badge}</td>
+            <td><span class="fcr-station-pill" title="${escapeHtml(stationRaw)}">${escapeHtml(stationLabel)}</span></td>
+          </tr>${detailBlock}`;
+      })
+      .join('');
+
+    const gapsTotalMin = gaps ? gaps.reduce((sum, g) => sum + g.durationMin, 0) : 0;
+    const gapsBlock = gaps && gaps.length
+      ? `
+        <div class="fcr-gaps-card">
+          <div class="fcr-gaps-title">⏸ Temps sans action (≥ ${thresholdMin} min)</div>
+          <div class="fcr-gaps-note">Les pauses planifiées (ex: 10h00–10h30) sont déduites et ne comptent pas comme arrêt.</div>
+          <table class="fcr-table">
+            <thead>
+              <tr><th>De</th><th>À</th><th>Durée</th></tr>
+            </thead>
+            <tbody>
+              ${gaps
+                .map(
+                  g => `
+                <tr class="fcr-row">
+                  <td class="fcr-time">${g.from.slice(11)}</td>
+                  <td class="fcr-time">${g.to.slice(11)}</td>
+                  <td class="fcr-gap-duration">${g.durationMin} min${g.excludedMin ? ` <span class="fcr-gaps-note" style="display:inline">(−${g.excludedMin} min pause)</span>` : ''}</td>
+                </tr>`
+                )
+                .join('')}
+            </tbody>
+            <tfoot>
+              <tr class="fcr-row" style="border-top:1px solid var(--fcr-border);">
+                <td colspan="2" style="font-weight:700;">Total (pause déduite)</td>
+                <td class="fcr-gap-duration">${formatDurationMin(gapsTotalMin)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>`
+      : '';
+
+    container.innerHTML = `
+      <table class="fcr-table">
+        <thead>
+          <tr><th>Heure</th><th>ASIN</th><th>Tote</th><th>Station</th></tr>
+        </thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+      ${gapsBlock}`;
+
+    // Toggle du détail dépliable pour les groupes avec plusieurs occurrences.
+    container.querySelectorAll('[data-toggle]').forEach(badgeEl => {
+      badgeEl.addEventListener('click', () => {
+        const idx = badgeEl.getAttribute('data-toggle');
+        const row = container.querySelector(`#fcr-trace-detail-${idx}`);
+        if (!row) return;
+        const willOpen = row.style.display === 'none';
+        row.style.display = willOpen ? 'table-row' : 'none';
+        badgeEl.textContent = badgeEl.textContent.replace(willOpen ? '▾' : '▴', willOpen ? '▴' : '▾');
+      });
+    });
+  }
+
+  function exportCsv(results, gaps, thresholdMin = inactivityThresholdMin) {
+    const header = ['Date', 'ASIN', 'OldBin', 'NewBin', 'Tote', 'DateMatchContainer', 'EcartSec', 'MatchFiable', 'ContainerCode', 'Station', 'LocalisationHeritee'];
+    const lines = [header.join(';')];
+    for (const r of results) {
+      lines.push(
+        [
+          r.date, r.asin, r.oldBin, r.newBin, r.tote,
+          r.matchDate || '', r.matchDiffSec ?? '', r.matchUnreliable ? 'non' : 'oui',
+          r.containerCode || '', r.station || '', r.inheritedLocation ? 'oui' : 'non',
+        ]
+          .map(v => `"${String(v).replace(/"/g, '""')}"`)
+          .join(';')
+      );
+    }
+
+    if (gaps && gaps.length) {
+      const totalMin = gaps.reduce((sum, g) => sum + g.durationMin, 0);
+      lines.push('');
+      lines.push(`"--- Temps sans action (>= ${thresholdMin} min, pause deduite) ---"`);
+      lines.push(['De', 'A', 'DureeMin'].join(';'));
+      for (const g of gaps) {
+        lines.push([g.from, g.to, g.durationMin].map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'));
+      }
+      lines.push(['TOTAL', '', totalMin].map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'));
+    }
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `fcr-trace-sweeper-${Date.now()}.csv`;
+    a.click();
+  }
+
+  function makeDraggable(panel, handle) {
+    let ox, oy, dragging = false;
+    handle.addEventListener('mousedown', e => {
+      dragging = true;
+      const rect = panel.getBoundingClientRect();
+      ox = e.clientX - rect.left;
+      oy = e.clientY - rect.top;
+      panel.style.right = 'auto';
+      panel.style.bottom = 'auto';
+    });
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      panel.style.left = e.clientX - ox + 'px';
+      panel.style.top = e.clientY - oy + 'px';
+    });
+    document.addEventListener('mouseup', () => (dragging = false));
+  }
+
+  /* =========================================================
+   *  INIT — seulement si on est sur une page "personne" (AA)
+   *  et pas sur une page "tote" / "container".
+   * ========================================================= */
+
+  waitFor(() => findTableById(document, 'table-inventory-history', ['old bin', 'new bin']), { timeout: 8000 })
+    .then(() => {
+      if (!document.getElementById('fcr-trace-panel')) buildPanel();
+    })
+    .catch(() => {
+      // Pas de tableau Inventory History détecté (probablement une page tote) -> on ne fait rien.
+    });
+})();
