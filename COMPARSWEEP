@@ -1,0 +1,1279 @@
+// ==UserScript==
+// @name         FCR Sweeper Comparator (ETZ2)
+// @namespace    fcr-sweeper-comparator
+// @version      0.2.0
+// @description  Compare plusieurs sweepers sur une période (date/heure de début → date/heure de fin, éventuellement sur plusieurs jours) : actions totales / par heure travaillée, liste+durée des arrêts (>=15 min, seuil réglable) avec total, temps moyen/médian entre deux actions (régularité), nombre de stations distinctes visitées (résolution RoboScout optionnelle), avec moyenne/médiane d'équipe en repère pour situer chaque AA au-dessus/en-dessous plutôt qu'en absolu. Outil séparé de FCR Trace Sweeper, réutilise le même pipeline de scraping.
+// @author       JB
+// @match        https://fcresearch-eu.aka.amazon.com/ETZ2/*
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_xmlhttpRequest
+// @connect      roboscout.amazon.com
+// @run-at       document-idle
+// ==/UserScript==
+
+(function () {
+  'use strict';
+
+  /* =========================================================
+   *  CONFIG / CONSTANTES
+   *  (mêmes valeurs que FCR Trace Sweeper, pour rester cohérent)
+   * ========================================================= */
+  const BASE_URL = 'https://fcresearch-eu.aka.amazon.com/ETZ2/results?s=';
+  const TOTE_REGEX = /^tsX/i;
+  const CONTAINER_REGEX = /(dz-P-[A-Z]\d+|pc99[\w-]+)/i;
+  const MATCH_WINDOW_MS = 1000 * 60 * 30;
+
+  const ROBOSCOUT_STATIC_PARAMS_API = {
+    mom_ids: '428,2060,321,362,379,426',
+    osm_ids: '30',
+    oxm_ids: '1698,1792,445,854,1962,441',
+    ofm_ids: '',
+  };
+  const ROBOSCOUT_WINDOW_MS = 1000 * 60 * 15;
+
+  const EXCLUDED_BREAKS = [
+    { start: '10:00', end: '10:30' },
+  ];
+
+  const GAP_MIN_DEFAULT = 15;
+  const SHIFT_HOURS_DEFAULT = 8;
+  const SWEEPER_CONCURRENCY = 3;     // nb de sweepers analysés en parallèle
+  const TOTE_CONCURRENCY = 6;        // nb de totes en parallèle (par sweeper), comme le script d'origine
+  const ROBOSCOUT_CONCURRENCY = 6;
+
+  const GM_KEYS = {
+    logins: 'fcr_cmp_logins',
+    date: 'fcr_cmp_date', // legacy (< v0.2.0), conservé pour migration
+    startDateTime: 'fcr_cmp_start_dt',
+    endDateTime: 'fcr_cmp_end_dt',
+    shiftHours: 'fcr_cmp_shift_hours',
+    thresholdMin: 'fcr_cmp_threshold_min',
+    resolveStations: 'fcr_cmp_resolve_stations',
+  };
+
+  /* =========================================================
+   *  UTILITAIRES GENERIQUES (repris de FCR Trace Sweeper)
+   * ========================================================= */
+
+  let _heartbeatTimer = null;
+  const _heartbeatListeners = new Set();
+
+  function ensureHeartbeat() {
+    if (_heartbeatTimer) return;
+    try {
+      const code = 'setInterval(() => postMessage(1), 100);';
+      const blob = new Blob([code], { type: 'application/javascript' });
+      const worker = new Worker(URL.createObjectURL(blob));
+      worker.onmessage = () => { for (const fn of Array.from(_heartbeatListeners)) fn(); };
+      worker.onerror = () => {
+        console.warn('FCR Cmp: Worker métronome en erreur, repli sur setInterval classique.');
+        try { worker.terminate(); } catch (e) {}
+        _heartbeatTimer = null;
+        ensureHeartbeatFallback();
+      };
+      _heartbeatTimer = worker;
+    } catch (e) {
+      console.warn('FCR Cmp: création du Worker métronome impossible (CSP ?), repli sur setInterval classique.', e);
+      ensureHeartbeatFallback();
+    }
+  }
+
+  function ensureHeartbeatFallback() {
+    if (_heartbeatTimer) return;
+    _heartbeatTimer = setInterval(() => { for (const fn of Array.from(_heartbeatListeners)) fn(); }, 100);
+  }
+
+  function onHeartbeat(fn) {
+    ensureHeartbeat();
+    _heartbeatListeners.add(fn);
+    return () => _heartbeatListeners.delete(fn);
+  }
+
+  function heartbeatDelay(callback, ms) {
+    const start = Date.now();
+    const off = onHeartbeat(() => {
+      if (Date.now() - start >= ms) { off(); callback(); }
+    });
+    return off;
+  }
+
+  function throwIfAborted(signal) {
+    if (signal && signal.aborted) {
+      const e = new Error('Analyse annulée.');
+      e.name = 'AbortError';
+      throw e;
+    }
+  }
+
+  function waitFor(selectorFn, { timeout = 15000, interval = 250, signal } = {}) {
+    return new Promise((resolve, reject) => {
+      const start = Date.now();
+      let lastCheck = 0;
+      const off = onHeartbeat(() => {
+        if (signal && signal.aborted) { off(); return reject(Object.assign(new Error('Analyse annulée.'), { name: 'AbortError' })); }
+        const now = Date.now();
+        if (now - lastCheck < interval) return;
+        lastCheck = now;
+        const el = selectorFn();
+        if (el) { off(); return resolve(el); }
+        if (now - start > timeout) { off(); return reject(new Error('waitFor: timeout')); }
+      });
+    });
+  }
+
+  async function mapWithConcurrency(items, limit, fn, signal) {
+    let idx = 0;
+    async function worker() {
+      while (idx < items.length) {
+        throwIfAborted(signal);
+        const current = idx++;
+        await fn(items[current], current);
+      }
+    }
+    const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker);
+    await Promise.all(workers);
+  }
+
+  function cellText(v) {
+    if (v == null) return '';
+    if (typeof v !== 'string') return String(v);
+    if (v.indexOf('<') === -1) return v.trim();
+    const d = document.createElement('div');
+    d.innerHTML = v;
+    return (d.textContent || '').trim();
+  }
+
+  function headerSignature(th) {
+    const text = th.textContent && th.textContent.trim();
+    if (text) return text.toLowerCase();
+    const aria = th.getAttribute('aria-label');
+    if (aria) return aria.toLowerCase();
+    const id = th.id || '';
+    return id.replace(/-/g, ' ').toLowerCase();
+  }
+
+  function findTableById(doc, id, headerNeedlesFallback) {
+    const byId = doc.getElementById(id);
+    if (byId && byId.querySelector('tbody tr td, tr td')) return byId;
+    return headerNeedlesFallback ? findTableByHeaders(doc, headerNeedlesFallback) : null;
+  }
+
+  function findTableByHeaders(doc, headerNeedles) {
+    const tables = Array.from(doc.querySelectorAll('table'));
+    const candidates = [];
+    for (const t of tables) {
+      const headers = Array.from(t.querySelectorAll('thead th')).map(headerSignature);
+      if (headerNeedles.every(h => headers.some(hd => hd.includes(h)))) candidates.push(t);
+    }
+    if (!candidates.length) return null;
+    if (candidates.length === 1) return candidates[0];
+    let best = candidates[0];
+    let bestCount = -1;
+    for (const c of candidates) {
+      const count = c.querySelectorAll('tbody tr, tr').length;
+      if (count > bestCount) { bestCount = count; best = c; }
+    }
+    return best;
+  }
+
+  function getDataTableInstance(table) {
+    const win = table.ownerDocument.defaultView;
+    if (win && win.jQuery && win.jQuery.fn && win.jQuery.fn.DataTable && win.jQuery.fn.DataTable.isDataTable && win.jQuery.fn.DataTable.isDataTable(table)) {
+      return win.jQuery(table).DataTable();
+    }
+    return null;
+  }
+
+  function findScrollableAncestor(el) {
+    let node = el.parentElement;
+    const doc = el.ownerDocument;
+    const win = doc.defaultView;
+    while (node && node !== doc.body) {
+      const style = win.getComputedStyle(node);
+      if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 5) return node;
+      node = node.parentElement;
+    }
+    return doc.scrollingElement || doc.documentElement;
+  }
+
+  async function autoScrollToLoadAllRows(table, log, signal) {
+    const doc = table.ownerDocument;
+    const win = doc.defaultView;
+    const scrollEl = findScrollableAncestor(table);
+    const isWindowScroll = scrollEl === doc.documentElement || scrollEl === doc.scrollingElement;
+    const countRows = () => table.querySelectorAll('tbody tr, tr').length;
+    const scrollableHeight = () => (isWindowScroll ? doc.documentElement.scrollHeight : scrollEl.scrollHeight);
+    let stableRounds = 0;
+    let lastCount = countRows();
+    let lastHeight = scrollableHeight();
+    const maxRounds = 80;
+    for (let round = 0; round < maxRounds; round++) {
+      throwIfAborted(signal);
+      if (isWindowScroll) win.scrollTo(0, doc.documentElement.scrollHeight);
+      else { scrollEl.scrollTop = scrollEl.scrollHeight; scrollEl.dispatchEvent(new Event('scroll', { bubbles: true })); }
+      await new Promise(resolve => heartbeatDelay(resolve, 250));
+      const newCount = countRows();
+      const newHeight = scrollableHeight();
+      if (newCount === lastCount && newHeight === lastHeight) {
+        stableRounds++;
+        if (stableRounds >= 2) break;
+      } else {
+        stableRounds = 0;
+        if (newCount !== lastCount) log && log(`⏳ Chargement du tableau : ${newCount} ligne(s)...`);
+        lastCount = newCount;
+        lastHeight = newHeight;
+      }
+    }
+    return countRows();
+  }
+
+  async function autoScrollUntilDate(table, targetDateStr, log, signal) {
+    const doc = table.ownerDocument;
+    const win = doc.defaultView;
+    const scrollEl = findScrollableAncestor(table);
+    const isWindowScroll = scrollEl === doc.documentElement || scrollEl === doc.scrollingElement;
+    const target = parseFcrDate(targetDateStr);
+    const headers = Array.from(table.querySelectorAll('thead th')).map(headerSignature);
+    const dateColIdx = headers.findIndex(h => h.includes('move date'));
+    const getTrEls = () => {
+      let trEls = Array.from(table.querySelectorAll('tbody tr'));
+      if (trEls.length === 0) trEls = Array.from(table.querySelectorAll('tr')).filter(tr => tr.querySelector('td'));
+      return trEls;
+    };
+    const countRows = () => getTrEls().length;
+    const scrollableHeight = () => (isWindowScroll ? doc.documentElement.scrollHeight : scrollEl.scrollHeight);
+    const lastRowDate = () => {
+      if (dateColIdx === -1 || !target) return null;
+      const trEls = getTrEls();
+      const lastTr = trEls[trEls.length - 1];
+      if (!lastTr) return null;
+      const tds = lastTr.querySelectorAll('td');
+      const cell = tds[dateColIdx];
+      return cell ? parseFcrDate(cell.textContent.trim()) : null;
+    };
+    let stableRounds = 0;
+    let lastCount = countRows();
+    let lastHeight = scrollableHeight();
+    const maxRounds = 80;
+    for (let round = 0; round < maxRounds; round++) {
+      throwIfAborted(signal);
+      const d = lastRowDate();
+      if (d && d.getTime() <= target.getTime()) { log && log('⏳ Historique container : arrêt anticipé.'); break; }
+      if (isWindowScroll) win.scrollTo(0, doc.documentElement.scrollHeight);
+      else { scrollEl.scrollTop = scrollEl.scrollHeight; scrollEl.dispatchEvent(new Event('scroll', { bubbles: true })); }
+      await new Promise(resolve => heartbeatDelay(resolve, 250));
+      const newCount = countRows();
+      const newHeight = scrollableHeight();
+      if (newCount === lastCount && newHeight === lastHeight) {
+        stableRounds++;
+        if (stableRounds >= 2) break;
+      } else { stableRounds = 0; lastCount = newCount; lastHeight = newHeight; }
+    }
+    return countRows();
+  }
+
+  async function expandAndScrapeTable(table, log, targetDateStr, signal) {
+    throwIfAborted(signal);
+    const dt = getDataTableInstance(table);
+    if (dt) {
+      const win = table.ownerDocument.defaultView;
+      await new Promise(resolve => {
+        let resolved = false;
+        const done = () => { if (resolved) return; resolved = true; resolve(); };
+        win.jQuery(table).one('draw.dt', done);
+        try { dt.page.len(-1).draw(); } catch (e) { console.warn('FCR Cmp: page.len(-1) a échoué', e); done(); }
+        heartbeatDelay(done, 10000);
+      });
+      const rows = dt.rows().data().toArray().map(row => (Array.isArray(row) ? row.map(cellText) : Object.values(row).map(cellText)));
+      const settings = dt.settings()[0];
+      const titles = (settings.aoColumns || []).map(c => cellText(c.sTitle || c.title || '').toLowerCase());
+      const indexOf = name => titles.findIndex(t => t.includes(name));
+      return { rows, indexOf };
+    }
+    const loadedCount = targetDateStr
+      ? await autoScrollUntilDate(table, targetDateStr, log, signal)
+      : await autoScrollToLoadAllRows(table, log, signal);
+    void loadedCount;
+    const headers = Array.from(table.querySelectorAll('thead th')).map(headerSignature);
+    let trEls = Array.from(table.querySelectorAll('tbody tr'));
+    if (trEls.length === 0) trEls = Array.from(table.querySelectorAll('tr')).filter(tr => tr.querySelector('td'));
+    const rows = trEls.map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim()));
+    const indexOf = name => headers.findIndex(h => h.includes(name));
+    return { rows, indexOf };
+  }
+
+  function parseFcrDate(str) {
+    if (!str) return null;
+    const cleaned = str.replace(/\s+CEST$/i, '').trim();
+    const d = new Date(cleaned.replace(' ', 'T'));
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function europeParisOffsetMinutes(utcDate) {
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Paris', timeZoneName: 'shortOffset', hour: '2-digit' }).formatToParts(utcDate);
+      const tzPart = parts.find(p => p.type === 'timeZoneName');
+      const m = tzPart && tzPart.value.match(/GMT([+-]\d+)/i);
+      return m ? parseInt(m[1], 10) * 60 : 120;
+    } catch (e) {
+      console.warn('FCR Cmp: échec calcul offset Europe/Paris, fallback +2h (CEST)', e);
+      return 120;
+    }
+  }
+
+  function fcrDateToUtcMs(str) {
+    if (!str) return null;
+    const cleaned = str.replace(/\s+CEST$/i, '').replace(/\s+CET$/i, '').trim();
+    const m = cleaned.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
+    if (!m) return null;
+    const [, y, mo, d, h, mi, s] = m.slice(1).map(Number);
+    const guessUtcMs = Date.UTC(y, mo - 1, d, h, mi, s);
+    const offsetMin = europeParisOffsetMinutes(new Date(guessUtcMs));
+    return guessUtcMs - offsetMin * 60000;
+  }
+
+  function formatUtcForRoboScout(ms) {
+    const d = new Date(ms);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+  }
+
+  function buildRoboScoutApiUrl(aaLogin, matchDateStr) {
+    const centerUtcMs = fcrDateToUtcMs(matchDateStr);
+    if (centerUtcMs == null) return null;
+    const startUtc = formatUtcForRoboScout(centerUtcMs - ROBOSCOUT_WINDOW_MS);
+    const endUtc = formatUtcForRoboScout(centerUtcMs + ROBOSCOUT_WINDOW_MS);
+    const params = {
+      associateLogin: aaLogin, current_day: 'false', startDateTime: startUtc, endDateTime: endUtc,
+      viz: 'nvd3Table', instance_id: '1927', object_id: '19851', BrowserTZ: 'Europe/Berlin', app_name: 'RoboScout',
+      ...ROBOSCOUT_STATIC_PARAMS_API,
+    };
+    const qs = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+    return `https://roboscout.amazon.com/view_plot_data/?sites=(ETZ2)&${qs}`;
+  }
+
+  function findEntriesByKey(node, keyName, out = []) {
+    if (!node || typeof node !== 'object') return out;
+    if (Array.isArray(node)) { for (const item of node) findEntriesByKey(item, keyName, out); }
+    else {
+      if (node.key === keyName) out.push(node);
+      for (const v of Object.values(node)) { if (v && typeof v === 'object') findEntriesByKey(v, keyName, out); }
+    }
+    return out;
+  }
+
+  function gmFetch(url, signal) {
+    return new Promise((resolve, reject) => {
+      throwIfAborted(signal);
+      if (typeof GM_xmlhttpRequest !== 'function') { reject(new Error('GM_xmlhttpRequest indisponible')); return; }
+      const req = GM_xmlhttpRequest({
+        method: 'GET', url,
+        onload: res => resolve(res),
+        onerror: err => reject(new Error('GM_xmlhttpRequest erreur réseau: ' + JSON.stringify(err))),
+        ontimeout: () => reject(new Error('GM_xmlhttpRequest timeout')),
+        timeout: 20000,
+      });
+      if (signal) {
+        signal.addEventListener('abort', () => {
+          try { req && req.abort && req.abort(); } catch (e) {}
+          reject(Object.assign(new Error('Analyse annulée.'), { name: 'AbortError' }));
+        }, { once: true });
+      }
+    });
+  }
+
+  function extractAaLogin(containerCode) {
+    if (!containerCode) return null;
+    const m = containerCode.match(/^pc99(.+)$/i);
+    return m ? m[1] : null;
+  }
+
+  async function resolveStationViaRoboScout(aaLogin, matchDateStr, signal) {
+    const url = buildRoboScoutApiUrl(aaLogin, matchDateStr);
+    if (!url) return null;
+    const res = await gmFetch(url, signal);
+    let data;
+    try { data = JSON.parse(res.responseText); } catch (e) { return null; }
+    const entries = findEntriesByKey(data, 'Station_Id');
+    if (!entries.length) return null;
+    const matching = entries.filter(e => (e.xValue || '').toLowerCase().includes(aaLogin.toLowerCase()));
+    const chosen = (matching.length ? matching : entries)[0];
+    return chosen.yValue || null;
+  }
+
+  const DATE_INPUT_FORMAT = 'MM/DD/YYYY';
+
+  function isoToDisplayDate(iso, format = DATE_INPUT_FORMAT) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+    if (!m) return null;
+    const [, y, mo, d] = m;
+    return format === 'DD/MM/YYYY' ? `${d}/${mo}/${y}` : `${mo}/${d}/${y}`;
+  }
+
+  function setNativeInputValue(input, value) {
+    const win = input.ownerDocument.defaultView || window;
+    const setter = Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, 'value').set;
+    setter.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function findDateSearchControls(doc) {
+    const inputs = Array.from(doc.querySelectorAll('input'));
+    const startInput = inputs.find(i => /start/i.test(i.name || '') || /start/i.test(i.id || '') || /start/i.test(i.getAttribute('aria-label') || ''));
+    const endInput = inputs.find(i => /end/i.test(i.name || '') || /end/i.test(i.id || '') || /end/i.test(i.getAttribute('aria-label') || ''));
+    const buttons = Array.from(doc.querySelectorAll('button, input[type="submit"]'));
+    const searchBtn = buttons.find(b => /search/i.test(b.textContent || b.value || ''));
+    return { startInput, endInput, searchBtn };
+  }
+
+  async function applyDateRangeAndSearch(doc, startDateISO, endDateISO, log, signal) {
+    if (!startDateISO || !endDateISO) return;
+    const displayStart = isoToDisplayDate(startDateISO);
+    const displayEnd = isoToDisplayDate(endDateISO);
+    if (!displayStart || !displayEnd) return;
+
+    let startInput, endInput, searchBtn;
+    try {
+      await waitFor(() => {
+        const c = findDateSearchControls(doc);
+        startInput = c.startInput; endInput = c.endInput; searchBtn = c.searchBtn;
+        return startInput && endInput && searchBtn ? true : null;
+      }, { timeout: 10000, interval: 200, signal });
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw e;
+      log && log('⚠️ Champs Start/End date introuvables : scraping de la période déjà affichée.');
+      return;
+    }
+
+    const existingTable = findTableById(doc, 'table-inventory-history', ['old bin', 'new bin']);
+    const beforeSignature = existingTable ? (existingTable.querySelector('tbody') || existingTable).textContent.slice(0, 300) : '__none__';
+
+    setNativeInputValue(startInput, displayStart);
+    setNativeInputValue(endInput, displayEnd);
+    searchBtn.click();
+
+    try {
+      await waitFor(() => {
+        const t = findTableById(doc, 'table-inventory-history', ['old bin', 'new bin']);
+        if (!t) return null;
+        const sig = (t.querySelector('tbody') || t).textContent.slice(0, 300);
+        return sig !== beforeSignature ? true : null;
+      }, { timeout: 5000, interval: 200, signal });
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw e;
+    }
+  }
+
+  // `range` = { startDate: Date, endDate: Date, startDateISO: 'YYYY-MM-DD', endDateISO: 'YYYY-MM-DD' }
+  // startDate/endDate portent l'heure précise (bornes datetime), startDateISO/endDateISO ne servent
+  // qu'à renseigner les champs Start/End date (jour) du filtre du site, qui ne connaît pas l'heure.
+  async function scrapeInventoryTable(doc, range, log, signal) {
+    await applyDateRangeAndSearch(doc, range && range.startDateISO, range && range.endDateISO, log, signal);
+    const table = await waitFor(() => findTableById(doc, 'table-inventory-history', ['old bin', 'new bin']), { timeout: 20000, signal });
+    const { rows: rawRows, indexOf } = await expandAndScrapeTable(table, log, null, signal);
+    const iDate = indexOf('date');
+    const iOp = indexOf('op');
+    const iAsin = indexOf('asin');
+    const iOldBin = indexOf('old bin');
+    const iNewBin = indexOf('new bin');
+    if (iDate === -1 || iOldBin === -1 || iNewBin === -1) {
+      throw new Error('Colonnes Date/Old Bin/New Bin introuvables.');
+    }
+    const mapped = rawRows.map(r => ({
+      date: r[iDate] || '', op: iOp > -1 ? r[iOp] : '', asin: iAsin > -1 ? r[iAsin] : '',
+      oldBin: r[iOldBin] || '', newBin: r[iNewBin] || '',
+    }));
+    const afterDate = mapped.filter(r => isRowInDateTimeRange(r.date, range));
+    const afterTote = afterDate.filter(r => TOTE_REGEX.test(r.oldBin) || TOTE_REGEX.test(r.newBin));
+    log && log(`${rawRows.length} ligne(s) brute(s) → ${afterDate.length} après filtre période → ${afterTote.length} avec une tote.`);
+    return afterTote;
+  }
+
+  function isRowInDateTimeRange(rowDateStr, range) {
+    if (!range || (!range.startDate && !range.endDate)) return true;
+    const d = parseFcrDate(rowDateStr);
+    if (!d) return false;
+    if (range.startDate && d.getTime() < range.startDate.getTime()) return false;
+    if (range.endDate && d.getTime() > range.endDate.getTime()) return false;
+    return true;
+  }
+
+  async function getInventoryRowsForLogin(login, range, log, signal) {
+    const iframe = await loadInHiddenIframe(BASE_URL + encodeURIComponent(login), signal);
+    try {
+      const idoc = iframe.contentDocument;
+      return await scrapeInventoryTable(idoc, range, log, signal);
+    } catch (e) {
+      throw new Error(`Historique inventaire introuvable pour "${login}" : ${e.message}`);
+    } finally {
+      iframe.remove();
+    }
+  }
+
+  function loadInHiddenIframe(url, signal) {
+    return new Promise((resolve, reject) => {
+      throwIfAborted(signal);
+      const iframe = document.createElement('iframe');
+      iframe.style.cssText = 'position:fixed;top:-3000px;left:-3000px;width:1400px;height:900px;border:0;';
+      iframe.src = url;
+      document.body.appendChild(iframe);
+      let settled = false;
+      let offReady = null;
+      const settle = (fn, arg) => { if (settled) return; settled = true; if (offReady) offReady(); fn(arg); };
+      offReady = onHeartbeat(() => {
+        if (signal && signal.aborted) { iframe.remove(); settle(reject, Object.assign(new Error('Analyse annulée.'), { name: 'AbortError' })); return; }
+        let doc;
+        try { doc = iframe.contentDocument; } catch (e) { return; }
+        if (doc && doc.readyState !== 'loading' && doc.location.href !== 'about:blank') settle(resolve, iframe);
+      });
+      iframe.onerror = e => settle(reject, e);
+      heartbeatDelay(() => settle(reject, new Error('iframe timeout: ' + url)), 20000);
+    });
+  }
+
+  async function getContainerHistory(toteId, earliestTargetDateStr, signal) {
+    const iframe = await loadInHiddenIframe(BASE_URL + encodeURIComponent(toteId), signal);
+    try {
+      const table = await waitFor(() => findTableById(iframe.contentDocument, 'table-container-history', ['old container', 'new container']), { timeout: 15000, signal });
+      const { rows: rawRows, indexOf } = await expandAndScrapeTable(table, null, earliestTargetDateStr, signal);
+      const iDate = indexOf('move date');
+      const iOld = indexOf('old container');
+      const iNew = indexOf('new container');
+      return rawRows.map(r => ({ date: iDate > -1 ? r[iDate] : '', oldC: iOld > -1 ? r[iOld] : '', newC: iNew > -1 ? r[iNew] : '' }));
+    } finally {
+      iframe.remove();
+    }
+  }
+
+  function findClosestContainerMatch(targetDateStr, historyRows) {
+    const target = parseFcrDate(targetDateStr);
+    if (!target) return null;
+    let best = null;
+    let bestScore = Infinity;
+    for (const row of historyRows) {
+      const d = parseFcrDate(row.date);
+      if (!d) continue;
+      const signedDiff = target.getTime() - d.getTime();
+      const absDiff = Math.abs(signedDiff);
+      const hasContainer = CONTAINER_REGEX.test(row.oldC) || CONTAINER_REGEX.test(row.newC);
+      const futurePenalty = signedDiff < 0 ? 1e9 : 0;
+      const score = absDiff + futurePenalty + (hasContainer ? 0 : 1e12);
+      if (score < bestScore) { bestScore = score; best = { ...row, diffMs: absDiff, hasContainer }; }
+    }
+    if (best && best.diffMs > MATCH_WINDOW_MS) best.unreliable = true;
+    return best;
+  }
+
+  function timeOnSameDay(refDate, hhmm) {
+    const [h, m] = hhmm.split(':').map(Number);
+    const d = new Date(refDate);
+    d.setHours(h, m, 0, 0);
+    return d;
+  }
+
+  function overlapMs(aStart, aEnd, bStart, bEnd) {
+    const start = Math.max(aStart.getTime(), bStart.getTime());
+    const end = Math.min(aEnd.getTime(), bEnd.getTime());
+    return Math.max(0, end - start);
+  }
+
+  // Somme le recouvrement de [from, to] avec les pauses planifiées, en tenant compte
+  // du fait que from/to peuvent être sur des jours différents (recherche multi-jours) :
+  // on applique les pauses sur CHAQUE jour couvert par l'intervalle, pas seulement celui de `from`.
+  function excludedBreakOverlapMs(from, to) {
+    let total = 0;
+    const dayMs = 24 * 60 * 60 * 1000;
+    let cursor = new Date(from);
+    cursor.setHours(0, 0, 0, 0);
+    while (cursor.getTime() <= to.getTime()) {
+      for (const b of EXCLUDED_BREAKS) {
+        const bStart = timeOnSameDay(cursor, b.start);
+        const bEnd = timeOnSameDay(cursor, b.end);
+        total += overlapMs(from, to, bStart, bEnd);
+      }
+      cursor = new Date(cursor.getTime() + dayMs);
+    }
+    return total;
+  }
+
+  function computeInactivityGaps(sortedInvRows, thresholdMin) {
+    const thresholdMs = thresholdMin * 60000;
+    const gaps = [];
+    for (let i = 1; i < sortedInvRows.length; i++) {
+      const prev = parseFcrDate(sortedInvRows[i - 1].date);
+      const cur = parseFcrDate(sortedInvRows[i].date);
+      if (!prev || !cur) continue;
+      const rawDiffMs = cur.getTime() - prev.getTime();
+      const excludedMs = excludedBreakOverlapMs(prev, cur);
+      const adjustedMs = rawDiffMs - excludedMs;
+      if (adjustedMs >= thresholdMs) {
+        gaps.push({ from: sortedInvRows[i - 1].date, to: sortedInvRows[i].date, durationMin: Math.round(adjustedMs / 60000), excludedMin: excludedMs ? Math.round(excludedMs / 60000) : 0 });
+      }
+    }
+    return gaps;
+  }
+
+  // Intervalles (minutes) entre CHAQUE paire d'actions consécutives (avant tout
+  // regroupement par tote) — sert de base au temps moyen/médian entre deux actions
+  // (régularité du rythme). Le temps chevauchant une pause planifiée est déduit,
+  // comme pour les arrêts, pour ne pas fausser la régularité avec la pause déjeuner.
+  function computeIntervalsMin(sortedInvRows) {
+    const intervals = [];
+    for (let i = 1; i < sortedInvRows.length; i++) {
+      const prev = parseFcrDate(sortedInvRows[i - 1].date);
+      const cur = parseFcrDate(sortedInvRows[i].date);
+      if (!prev || !cur) continue;
+      const rawDiffMs = cur.getTime() - prev.getTime();
+      const excludedMs = excludedBreakOverlapMs(prev, cur);
+      const adjustedMs = Math.max(0, rawDiffMs - excludedMs);
+      intervals.push(adjustedMs / 60000);
+    }
+    return intervals;
+  }
+
+  function mean(arr) {
+    if (!arr.length) return null;
+    return arr.reduce((s, v) => s + v, 0) / arr.length;
+  }
+
+  function median(arr) {
+    if (!arr.length) return null;
+    const sorted = arr.slice().sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
+  function formatStationLabel(station) {
+    if (!station) return station;
+    const m = String(station).match(/(\d+)\D*$/);
+    return m ? m[1] : station;
+  }
+
+  function formatDurationMin(totalMin) {
+    const h = Math.floor(totalMin / 60);
+    const m = Math.round(totalMin % 60);
+    return h > 0 ? `${h}h${String(m).padStart(2, '0')}min` : `${m}min`;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  /* =========================================================
+   *  RESOLUTION STATIONS (optionnelle, réutilise le pipeline tote/container)
+   * ========================================================= */
+
+  // Reproduit le pipeline de matching de FCR Trace Sweeper mais ne conserve que ce
+  // qui est nécessaire au comptage de stations distinctes (pas de rendu détaillé).
+  async function resolveStationsForSweeper(invRows, log, signal) {
+    const uniqueTotes = [...new Set(invRows.flatMap(r => [r.oldBin, r.newBin]).filter(v => TOTE_REGEX.test(v)))];
+    const toteEarliestDate = {};
+    for (const r of invRows) {
+      const tote = TOTE_REGEX.test(r.newBin) ? r.newBin : r.oldBin;
+      if (!TOTE_REGEX.test(tote)) continue;
+      if (!toteEarliestDate[tote] || r.date < toteEarliestDate[tote]) toteEarliestDate[tote] = r.date;
+    }
+
+    const toteCache = {};
+    await mapWithConcurrency(uniqueTotes, TOTE_CONCURRENCY, async tote => {
+      try { toteCache[tote] = await getContainerHistory(tote, toteEarliestDate[tote], signal); }
+      catch (e) {
+        if (e && e.name === 'AbortError') throw e;
+        toteCache[tote] = [];
+      }
+    }, signal);
+
+    const results = invRows
+      .map(r => {
+        const tote = TOTE_REGEX.test(r.newBin) ? r.newBin : r.oldBin;
+        const history = toteCache[tote] || [];
+        const match = findClosestContainerMatch(r.date, history);
+        let dzCode = null, pc99Code = null;
+        if (match) {
+          const dzMatch = /dz-P-[A-Z]\d+/i.exec(`${match.oldC} ${match.newC}`);
+          if (dzMatch) dzCode = dzMatch[0];
+          const pcMatch = /pc99[\w-]+/i.exec(`${match.oldC} ${match.newC}`);
+          if (pcMatch) pc99Code = pcMatch[0];
+        }
+        const containerCode = pc99Code || dzCode;
+        const aaLogin = extractAaLogin(pc99Code);
+        return { tote, matchDate: match ? match.date : null, aaLogin, station: dzCode || pc99Code };
+      })
+      .sort((a, b) => (a.tote < b.tote ? -1 : 1));
+
+    for (let i = 0; i < results.length; i++) {
+      results[i].isBlockStart = i === 0 || results[i].tote !== results[i - 1].tote;
+    }
+
+    const needResolve = results.filter(r => r.isBlockStart && r.aaLogin && r.matchDate);
+    await mapWithConcurrency(needResolve, ROBOSCOUT_CONCURRENCY, async r => {
+      try {
+        const resolved = await resolveStationViaRoboScout(r.aaLogin, r.matchDate, signal);
+        if (resolved) r.station = resolved;
+      } catch (e) {
+        if (e && e.name === 'AbortError') throw e;
+      }
+    }, signal);
+
+    // propage la station résolue à toutes les lignes du même bloc (même tote)
+    let current = null;
+    for (const r of results) {
+      if (r.isBlockStart) current = r;
+      else if (current) r.station = current.station;
+    }
+
+    const distinctStations = new Set(
+      results.map(r => formatStationLabel(r.station)).filter(Boolean)
+    );
+    log && log(`📍 ${distinctStations.size} station(s) distincte(s) résolue(s).`);
+    return distinctStations;
+  }
+
+  /* =========================================================
+   *  ORCHESTRATION PAR SWEEPER
+   * ========================================================= */
+
+  async function analyzeSweeper(login, range, thresholdMin, shiftHours, resolveStations, onLog, signal) {
+    const log = msg => onLog && onLog(login, msg);
+    const invRows = await getInventoryRowsForLogin(login, range, log, signal);
+    const sorted = invRows.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+    const gaps = computeInactivityGaps(sorted, thresholdMin);
+    const gapsTotalMin = gaps.reduce((s, g) => s + g.durationMin, 0);
+    const intervals = computeIntervalsMin(sorted);
+
+    let distinctStations = null;
+    if (resolveStations && sorted.length) {
+      distinctStations = (await resolveStationsForSweeper(sorted, log, signal)).size;
+    }
+
+    const totalActions = sorted.length;
+    return {
+      login,
+      totalActions,
+      actionsPerHour: shiftHours > 0 ? totalActions / shiftHours : null,
+      gaps,
+      gapsTotalMin,
+      avgIntervalMin: mean(intervals),
+      medianIntervalMin: median(intervals),
+      distinctStations, // null si non calculé
+      firstAction: sorted.length ? sorted[0].date : null,
+      lastAction: sorted.length ? sorted[sorted.length - 1].date : null,
+      error: null,
+    };
+  }
+
+  /* =========================================================
+   *  UI
+   * ========================================================= */
+
+  const PANEL_CSS = `
+    #fcr-cmp-panel {
+      --c-bg: #17181c; --c-bg-alt: #1f2127; --c-border: #2e313a; --c-text: #e6e7eb;
+      --c-muted: #8a8f9c; --c-accent: #4f8ff7; --c-accent-dim: #2d4a80;
+      --c-warn: #e8a83c; --c-good: #3ecf8e; --c-bad: #e2586b;
+      position: fixed; top: 16px; right: 16px; z-index: 999999;
+      width: 720px; max-height: 88vh; overflow: auto;
+      background: var(--c-bg); color: var(--c-text);
+      font: 12.5px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      border: 1px solid var(--c-border); border-radius: 10px;
+      box-shadow: 0 8px 28px rgba(0,0,0,.55);
+    }
+    #fcr-cmp-panel * { box-sizing: border-box; }
+    #fcr-cmp-header {
+      padding: 10px 14px; background: linear-gradient(180deg, #22242b, #1b1d23);
+      border-bottom: 1px solid var(--c-border);
+      display: flex; justify-content: space-between; align-items: center; cursor: move;
+      border-radius: 10px 10px 0 0;
+    }
+    #fcr-cmp-header strong { font-size: 13px; letter-spacing: .2px; }
+    #fcr-cmp-collapse {
+      background: none; border: none; color: var(--c-muted); cursor: pointer;
+      font-size: 14px; line-height: 1; padding: 2px 6px; border-radius: 4px;
+    }
+    #fcr-cmp-collapse:hover { background: var(--c-bg-alt); color: var(--c-text); }
+    #fcr-cmp-body { padding: 12px 14px; }
+    .fcr-cmp-field { margin-bottom: 8px; }
+    .fcr-cmp-field label { display: block; color: var(--c-muted); font-size: 11px; margin-bottom: 3px; text-transform: uppercase; letter-spacing: .3px; }
+    .fcr-cmp-field textarea, .fcr-cmp-field input {
+      width: 100%; background: var(--c-bg-alt); color: var(--c-text);
+      border: 1px solid var(--c-border); border-radius: 6px; padding: 6px 8px; font: inherit;
+    }
+    .fcr-cmp-field textarea { resize: vertical; min-height: 64px; font-family: "JetBrains Mono", Menlo, monospace; font-size: 11.5px; }
+    .fcr-cmp-row { display: flex; gap: 10px; }
+    .fcr-cmp-row > div { flex: 1; }
+    .fcr-cmp-checkbox { display: flex; align-items: center; gap: 6px; color: var(--c-muted); margin-bottom: 10px; }
+    .fcr-cmp-actions { display: flex; gap: 8px; margin: 10px 0; }
+    #fcr-cmp-go {
+      background: var(--c-accent); color: #fff; border: none; padding: 7px 16px;
+      border-radius: 6px; cursor: pointer; font-weight: 600;
+    }
+    #fcr-cmp-go:hover { filter: brightness(1.08); }
+    .fcr-cmp-cancel {
+      display: none; background: transparent; color: var(--c-warn);
+      border: 1px solid var(--c-warn); padding: 7px 14px; border-radius: 6px; cursor: pointer; font-weight: 600;
+    }
+    #fcr-cmp-export {
+      display: none; background: var(--c-bg-alt); color: var(--c-text);
+      border: 1px solid var(--c-border); padding: 7px 14px; border-radius: 6px; cursor: pointer;
+    }
+    #fcr-cmp-export:hover { border-color: var(--c-accent); color: var(--c-accent); }
+    #fcr-cmp-status { color: var(--c-muted); margin: 6px 0; min-height: 16px; white-space: pre-line; }
+    .fcr-cmp-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .fcr-cmp-table th {
+      position: sticky; top: 0; background: var(--c-bg);
+      color: var(--c-muted); text-align: left; font-weight: 600;
+      padding: 5px 6px; border-bottom: 1px solid var(--c-border); font-size: 10.5px;
+      text-transform: uppercase; letter-spacing: .3px; white-space: nowrap;
+    }
+    .fcr-cmp-table td { padding: 6px 6px; vertical-align: middle; border-bottom: 1px solid rgba(255,255,255,.04); }
+    .fcr-cmp-table tr:hover td { background: var(--c-bg-alt); }
+    .fcr-cmp-login { font-weight: 700; }
+    .fcr-cmp-num { font-family: "JetBrains Mono", Menlo, monospace; text-align: right; white-space: nowrap; }
+    .fcr-cmp-delta { font-size: 10px; margin-left: 4px; font-weight: 700; }
+    .fcr-cmp-delta.up { color: var(--c-good); }
+    .fcr-cmp-delta.down { color: var(--c-bad); }
+    .fcr-cmp-benchmark td { color: var(--c-muted); font-style: italic; border-top: 1px solid var(--c-border); }
+    .fcr-cmp-error { color: var(--c-bad); font-style: italic; }
+    .fcr-cmp-gaps-toggle {
+      cursor: pointer; color: var(--c-accent); font-size: 10.5px; text-decoration: underline;
+    }
+    .fcr-cmp-gaps-detail td { padding: 0; background: rgba(255,255,255,.02); }
+    .fcr-cmp-gaps-detail table { width: 100%; border-collapse: collapse; }
+    .fcr-cmp-gaps-detail td.inner { padding: 4px 6px 4px 24px; color: var(--c-muted); font-size: 11px; }
+    .fcr-cmp-note { color: var(--c-muted); font-size: 10.5px; margin: 4px 0 10px; }
+  `;
+
+  function loadStr(key, def) {
+    try { return typeof GM_getValue === 'function' ? GM_getValue(key, def) : def; } catch (e) { return def; }
+  }
+  function saveStr(key, val) {
+    try { if (typeof GM_setValue === 'function') GM_setValue(key, val); } catch (e) {}
+  }
+
+  function todayIso() {
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  // Format attendu par <input type="datetime-local"> : "YYYY-MM-DDTHH:mm" (heure locale du navigateur).
+  function toDatetimeLocalValue(d) {
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function defaultStartDateTime() {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return toDatetimeLocalValue(d);
+  }
+
+  function defaultEndDateTime() {
+    const d = new Date();
+    d.setHours(23, 59, 0, 0);
+    return toDatetimeLocalValue(d);
+  }
+
+  // datetime-local ("YYYY-MM-DDTHH:mm") est parsé nativement comme heure locale par `new Date()`,
+  // ce qui reste cohérent avec parseFcrDate() (qui traite aussi les dates FCR comme heure locale du navigateur).
+  function parseDatetimeLocal(str) {
+    if (!str) return null;
+    const d = new Date(str);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function dateOnlyIso(d) {
+    if (!d) return null;
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  // Construit l'objet range { startDate, endDate, startDateISO, endDateISO } à partir des
+  // valeurs brutes des deux champs datetime-local. Retourne null si invalide/incohérent.
+  function buildDateTimeRange(startRaw, endRaw) {
+    const startDate = parseDatetimeLocal(startRaw);
+    const endDate = parseDatetimeLocal(endRaw);
+    if (!startDate || !endDate) return null;
+    if (startDate.getTime() > endDate.getTime()) return null;
+    return {
+      startDate, endDate,
+      startDateISO: dateOnlyIso(startDate),
+      endDateISO: dateOnlyIso(endDate),
+    };
+  }
+
+  function formatDatetimeLabel(d) {
+    if (!d) return '';
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  // Parse une ligne de la textarea "login" ou "login:heures" (override du nb
+  // d'heures travaillées pour ce sweeper précis, sinon on retombe sur la valeur
+  // globale du champ "Heures travaillées (défaut)").
+  function parseLoginLines(raw, defaultShiftHours) {
+    return raw
+      .split(/[\n,;]+/)
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(line => {
+        const m = line.match(/^([^\s:]+)\s*[:=]?\s*([\d.,]+)?$/);
+        if (!m) return { login: line, shiftHours: defaultShiftHours };
+        const shiftHours = m[2] ? parseFloat(m[2].replace(',', '.')) : defaultShiftHours;
+        return { login: m[1], shiftHours: Number.isFinite(shiftHours) && shiftHours > 0 ? shiftHours : defaultShiftHours };
+      });
+  }
+
+  function fmtNum(v, digits = 1) {
+    if (v == null || !Number.isFinite(v)) return '—';
+    return v.toFixed(digits);
+  }
+
+  // Rend une valeur numérique avec un badge ▲/▼ indiquant sa position par rapport à
+  // la médiane d'équipe. `higherIsBetter` inverse la couleur (ex: plus d'arrêts =
+  // moins bon, alors que plus d'actions/h = meilleur).
+  function deltaBadge(value, teamMedian, higherIsBetter) {
+    if (value == null || teamMedian == null || !Number.isFinite(value) || !Number.isFinite(teamMedian) || teamMedian === 0) return '';
+    const pct = ((value - teamMedian) / teamMedian) * 100;
+    if (Math.abs(pct) < 1) return '';
+    const isUp = pct > 0;
+    const good = higherIsBetter ? isUp : !isUp;
+    const cls = good ? 'up' : 'down';
+    const arrow = isUp ? '▲' : '▼';
+    return ` <span class="fcr-cmp-delta ${cls}">${arrow}${Math.abs(pct).toFixed(0)}%</span>`;
+  }
+
+  function buildPanel() {
+    const wrap = document.createElement('div');
+    wrap.id = 'fcr-cmp-panel';
+    wrap.innerHTML = `
+      <div id="fcr-cmp-header">
+        <strong>🧹 FCR Sweeper Comparator</strong>
+        <button id="fcr-cmp-collapse" title="Réduire/Agrandir">—</button>
+      </div>
+      <div id="fcr-cmp-body">
+        <div class="fcr-cmp-field">
+          <label>Logins AA à comparer (un par ligne, ou "login:heures" pour un poste différent)</label>
+          <textarea id="fcr-cmp-logins" placeholder="jeanbayd&#10;mariedup:7.5&#10;paulmar"></textarea>
+        </div>
+        <div class="fcr-cmp-row">
+          <div class="fcr-cmp-field">
+            <label>Début (date/heure)</label>
+            <input type="datetime-local" id="fcr-cmp-start" />
+          </div>
+          <div class="fcr-cmp-field">
+            <label>Fin (date/heure)</label>
+            <input type="datetime-local" id="fcr-cmp-end" />
+          </div>
+        </div>
+        <div class="fcr-cmp-row">
+          <div class="fcr-cmp-field">
+            <label>Heures travaillées (défaut, sur la période)</label>
+            <input type="number" id="fcr-cmp-shift" min="0.5" step="0.5" />
+          </div>
+          <div class="fcr-cmp-field">
+            <label>Seuil arrêt (min)</label>
+            <input type="number" id="fcr-cmp-threshold" min="1" step="1" />
+          </div>
+        </div>
+        <div class="fcr-cmp-checkbox">
+          <input type="checkbox" id="fcr-cmp-stations" />
+          <label for="fcr-cmp-stations" style="margin:0;text-transform:none;">Résoudre les stations distinctes visitées (via RoboScout — plus lent, 1 requête réseau par tote/AA)</label>
+        </div>
+        <div class="fcr-cmp-actions">
+          <button id="fcr-cmp-go">Comparer</button>
+          <button class="fcr-cmp-cancel" id="fcr-cmp-cancel">Annuler</button>
+          <button id="fcr-cmp-export">Exporter CSV</button>
+        </div>
+        <div id="fcr-cmp-status"></div>
+        <div id="fcr-cmp-results"></div>
+      </div>
+    `;
+    document.body.appendChild(wrap);
+    makeDraggable(wrap, wrap.querySelector('#fcr-cmp-header'));
+
+    const style = document.createElement('style');
+    style.textContent = PANEL_CSS;
+    document.head.appendChild(style);
+
+    const loginsEl = wrap.querySelector('#fcr-cmp-logins');
+    const startEl = wrap.querySelector('#fcr-cmp-start');
+    const endEl = wrap.querySelector('#fcr-cmp-end');
+    const shiftEl = wrap.querySelector('#fcr-cmp-shift');
+    const thresholdEl = wrap.querySelector('#fcr-cmp-threshold');
+    const stationsEl = wrap.querySelector('#fcr-cmp-stations');
+    const goBtn = wrap.querySelector('#fcr-cmp-go');
+    const cancelBtn = wrap.querySelector('#fcr-cmp-cancel');
+    const exportBtn = wrap.querySelector('#fcr-cmp-export');
+    const statusEl = wrap.querySelector('#fcr-cmp-status');
+    const resultsEl = wrap.querySelector('#fcr-cmp-results');
+    const collapseBtn = wrap.querySelector('#fcr-cmp-collapse');
+    const bodyEl = wrap.querySelector('#fcr-cmp-body');
+
+    loginsEl.value = loadStr(GM_KEYS.logins, '');
+    // Migration douce depuis l'ancienne clé "date" (une seule journée, < v0.2.0) si présente
+    // et qu'aucune valeur start/end n'a encore été enregistrée.
+    const legacyDate = loadStr(GM_KEYS.date, '');
+    startEl.value = loadStr(GM_KEYS.startDateTime, legacyDate ? `${legacyDate}T00:00` : defaultStartDateTime());
+    endEl.value = loadStr(GM_KEYS.endDateTime, legacyDate ? `${legacyDate}T23:59` : defaultEndDateTime());
+    shiftEl.value = loadStr(GM_KEYS.shiftHours, SHIFT_HOURS_DEFAULT);
+    thresholdEl.value = loadStr(GM_KEYS.thresholdMin, GAP_MIN_DEFAULT);
+    stationsEl.checked = loadStr(GM_KEYS.resolveStations, false) === true || loadStr(GM_KEYS.resolveStations, 'false') === 'true';
+
+    collapseBtn.addEventListener('click', () => {
+      const collapsed = bodyEl.style.display === 'none';
+      bodyEl.style.display = collapsed ? 'block' : 'none';
+      collapseBtn.textContent = collapsed ? '—' : '▢';
+    });
+
+    let currentController = null;
+    let lastRun = null; // { entries: [{login, shiftHours}], results: [...] }
+
+    function setBusy(busy) {
+      goBtn.disabled = busy;
+      goBtn.textContent = busy ? 'Analyse en cours…' : 'Comparer';
+      cancelBtn.style.display = busy ? 'inline-block' : 'none';
+    }
+
+    function log(msg) {
+      statusEl.textContent = msg;
+    }
+
+    cancelBtn.addEventListener('click', () => {
+      if (currentController) currentController.abort();
+    });
+
+    goBtn.addEventListener('click', async () => {
+      const rawLogins = loginsEl.value.trim();
+      if (!rawLogins) { log('⚠️ Renseigne au moins un login AA.'); return; }
+      const startRaw = startEl.value;
+      const endRaw = endEl.value;
+      if (!startRaw || !endRaw) { log('⚠️ Renseigne une date/heure de début et de fin.'); return; }
+      const range = buildDateTimeRange(startRaw, endRaw);
+      if (!range) { log('⚠️ Période invalide : la fin doit être après le début.'); return; }
+      const shiftHoursDefault = parseFloat(shiftEl.value) || SHIFT_HOURS_DEFAULT;
+      const thresholdMin = parseInt(thresholdEl.value, 10) || GAP_MIN_DEFAULT;
+      const resolveStations = stationsEl.checked;
+
+      saveStr(GM_KEYS.logins, rawLogins);
+      saveStr(GM_KEYS.startDateTime, startRaw);
+      saveStr(GM_KEYS.endDateTime, endRaw);
+      saveStr(GM_KEYS.shiftHours, shiftHoursDefault);
+      saveStr(GM_KEYS.thresholdMin, thresholdMin);
+      saveStr(GM_KEYS.resolveStations, resolveStations);
+
+      const entries = parseLoginLines(rawLogins, shiftHoursDefault);
+      if (!entries.length) { log('⚠️ Aucun login valide détecté.'); return; }
+
+      currentController = new AbortController();
+      const signal = currentController.signal;
+      setBusy(true);
+      exportBtn.style.display = 'none';
+      resultsEl.innerHTML = '';
+      const perLoginStatus = {};
+      entries.forEach(e => { perLoginStatus[e.login] = 'en attente…'; });
+      const renderStatus = () => {
+        statusEl.textContent = entries.map(e => `${e.login}: ${perLoginStatus[e.login]}`).join('\n');
+      };
+      renderStatus();
+
+      const results = new Array(entries.length);
+      try {
+        await mapWithConcurrency(entries, SWEEPER_CONCURRENCY, async (entry, idx) => {
+          try {
+            const res = await analyzeSweeper(
+              entry.login, range, thresholdMin, entry.shiftHours, resolveStations,
+              (login, msg) => { perLoginStatus[login] = msg; renderStatus(); },
+              signal
+            );
+            perLoginStatus[entry.login] = `✅ ${res.totalActions} action(s)`;
+            results[idx] = res;
+          } catch (e) {
+            if (e && e.name === 'AbortError') throw e;
+            perLoginStatus[entry.login] = `❌ ${e.message}`;
+            results[idx] = { login: entry.login, error: e.message };
+          }
+          renderStatus();
+        }, signal);
+
+        lastRun = { entries, results, range, thresholdMin, resolveStations };
+        renderResults(resultsEl, results, thresholdMin, resolveStations, range);
+        exportBtn.style.display = results.some(r => !r.error) ? 'inline-block' : 'none';
+        statusEl.textContent = `Terminé — ${results.filter(r => !r.error).length}/${results.length} sweeper(s) analysé(s) avec succès (période : ${formatDatetimeLabel(range.startDate)} → ${formatDatetimeLabel(range.endDate)}).`;
+      } catch (e) {
+        if (e && e.name === 'AbortError') {
+          statusEl.textContent = '⏹ Analyse annulée.';
+        } else {
+          statusEl.textContent = `❌ Erreur inattendue : ${e.message}`;
+          console.error('FCR Cmp:', e);
+        }
+      } finally {
+        setBusy(false);
+        currentController = null;
+      }
+    });
+
+    exportBtn.addEventListener('click', () => {
+      if (lastRun) exportCsv(lastRun.results, lastRun.range);
+    });
+  }
+
+  function renderResults(container, results, thresholdMin, resolveStations, range) {
+    const ok = results.filter(r => !r.error);
+    if (!ok.length) {
+      container.innerHTML = '<span class="fcr-cmp-error">Aucun résultat exploitable.</span>';
+      return;
+    }
+
+    const teamMedianActions = median(ok.map(r => r.totalActions));
+    const teamMedianRate = median(ok.map(r => r.actionsPerHour).filter(v => v != null));
+    const teamMedianGapsTotal = median(ok.map(r => r.gapsTotalMin));
+    const teamMedianGapsCount = median(ok.map(r => r.gaps.length));
+    const teamMedianInterval = median(ok.map(r => r.medianIntervalMin).filter(v => v != null));
+    const teamMedianStations = resolveStations ? median(ok.map(r => r.distinctStations).filter(v => v != null)) : null;
+
+    const teamMeanActions = mean(ok.map(r => r.totalActions));
+    const teamMeanRate = mean(ok.map(r => r.actionsPerHour).filter(v => v != null));
+    const teamMeanGapsTotal = mean(ok.map(r => r.gapsTotalMin));
+    const teamMeanInterval = mean(ok.map(r => r.medianIntervalMin).filter(v => v != null));
+    const teamMeanStations = resolveStations ? mean(ok.map(r => r.distinctStations).filter(v => v != null)) : null;
+
+    const stationsHeader = resolveStations ? '<th>Stations distinctes</th>' : '';
+
+    const rowsHtml = results.map((r, i) => {
+      if (r.error) {
+        return `<tr><td class="fcr-cmp-login">${escapeHtml(r.login)}</td><td colspan="6" class="fcr-cmp-error">${escapeHtml(r.error)}</td></tr>`;
+      }
+      const gapsToggle = r.gaps.length
+        ? `<div class="fcr-cmp-gaps-toggle" data-toggle-gaps="${i}">${r.gaps.length} arrêt(s) ▾</div>`
+        : '<span style="color:var(--c-muted)">aucun</span>';
+      const gapsDetail = r.gaps.length
+        ? `<tr class="fcr-cmp-gaps-detail" id="fcr-cmp-gaps-${i}" style="display:none;"><td colspan="${resolveStations ? 7 : 6}">
+             <table><tbody>
+               ${r.gaps.map(g => `<tr><td class="inner">${g.from.slice(11)} → ${g.to.slice(11)}</td><td class="inner fcr-cmp-num">${g.durationMin} min${g.excludedMin ? ` (−${g.excludedMin} min pause)` : ''}</td></tr>`).join('')}
+             </tbody></table>
+           </td></tr>`
+        : '';
+      const stationsCell = resolveStations
+        ? `<td class="fcr-cmp-num">${r.distinctStations != null ? r.distinctStations : '—'}${deltaBadge(r.distinctStations, teamMedianStations, true)}</td>`
+        : '';
+      return `
+        <tr>
+          <td class="fcr-cmp-login">${escapeHtml(r.login)}</td>
+          <td class="fcr-cmp-num">${r.totalActions}${deltaBadge(r.totalActions, teamMedianActions, true)}</td>
+          <td class="fcr-cmp-num">${fmtNum(r.actionsPerHour, 2)}${deltaBadge(r.actionsPerHour, teamMedianRate, true)}</td>
+          <td class="fcr-cmp-num">${fmtNum(r.medianIntervalMin, 1)} min${deltaBadge(r.medianIntervalMin, teamMedianInterval, false)}</td>
+          <td>${gapsToggle}</td>
+          <td class="fcr-cmp-num">${formatDurationMin(r.gapsTotalMin)}${deltaBadge(r.gapsTotalMin, teamMedianGapsTotal, false)}</td>
+          ${stationsCell}
+        </tr>${gapsDetail}`;
+    }).join('');
+
+    const benchmarkRow = `
+      <tr class="fcr-cmp-benchmark">
+        <td>Médiane équipe</td>
+        <td class="fcr-cmp-num">${fmtNum(teamMedianActions, 1)}</td>
+        <td class="fcr-cmp-num">${fmtNum(teamMedianRate, 2)}</td>
+        <td class="fcr-cmp-num">${fmtNum(teamMedianInterval, 1)} min</td>
+        <td class="fcr-cmp-num">${fmtNum(teamMedianGapsCount, 1)}</td>
+        <td class="fcr-cmp-num">${formatDurationMin(Math.round(teamMedianGapsTotal || 0))}</td>
+        ${resolveStations ? `<td class="fcr-cmp-num">${fmtNum(teamMedianStations, 1)}</td>` : ''}
+      </tr>
+      <tr class="fcr-cmp-benchmark">
+        <td>Moyenne équipe</td>
+        <td class="fcr-cmp-num">${fmtNum(teamMeanActions, 1)}</td>
+        <td class="fcr-cmp-num">${fmtNum(teamMeanRate, 2)}</td>
+        <td class="fcr-cmp-num">${fmtNum(teamMeanInterval, 1)} min</td>
+        <td class="fcr-cmp-num">—</td>
+        <td class="fcr-cmp-num">${formatDurationMin(Math.round(teamMeanGapsTotal || 0))}</td>
+        ${resolveStations ? `<td class="fcr-cmp-num">${fmtNum(teamMeanStations, 1)}</td>` : ''}
+      </tr>`;
+
+    container.innerHTML = `
+      <div class="fcr-cmp-note">Période analysée : ${range ? `${formatDatetimeLabel(range.startDate)} → ${formatDatetimeLabel(range.endDate)}` : '—'}. Les badges ▲/▼ situent chaque AA par rapport à la médiane de l'équipe (vert = plus favorable, rouge = moins favorable). Seuil d'arrêt : ${thresholdMin} min.</div>
+      <table class="fcr-cmp-table">
+        <thead>
+          <tr>
+            <th>AA</th>
+            <th>Actions (total)</th>
+            <th>Actions / h</th>
+            <th>Temps médian entre actions</th>
+            <th>Arrêts (≥ ${thresholdMin} min)</th>
+            <th>Total arrêts</th>
+            ${stationsHeader}
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}${benchmarkRow}</tbody>
+      </table>`;
+
+    container.querySelectorAll('[data-toggle-gaps]').forEach(el => {
+      el.addEventListener('click', () => {
+        const idx = el.getAttribute('data-toggle-gaps');
+        const row = container.querySelector(`#fcr-cmp-gaps-${idx}`);
+        if (!row) return;
+        const willOpen = row.style.display === 'none';
+        row.style.display = willOpen ? 'table-row' : 'none';
+        el.textContent = el.textContent.replace(willOpen ? '▾' : '▴', willOpen ? '▴' : '▾');
+      });
+    });
+  }
+
+  function exportCsv(results, range) {
+    const lines = [];
+    if (range) {
+      lines.push(`"Période analysée : ${formatDatetimeLabel(range.startDate)} → ${formatDatetimeLabel(range.endDate)}"`);
+      lines.push('');
+    }
+    const header = ['Login', 'ActionsTotal', 'ActionsParHeure', 'TempsMoyenEntreActionsMin', 'TempsMedianEntreActionsMin', 'NbArrets', 'TotalArretsMin', 'StationsDistinctes', 'PremiereAction', 'DerniereAction', 'Erreur'];
+    lines.push(header.join(';'));
+    for (const r of results) {
+      lines.push([
+        r.login, r.totalActions ?? '', r.actionsPerHour != null ? r.actionsPerHour.toFixed(2) : '',
+        r.avgIntervalMin != null ? r.avgIntervalMin.toFixed(1) : '', r.medianIntervalMin != null ? r.medianIntervalMin.toFixed(1) : '',
+        r.gaps ? r.gaps.length : '', r.gapsTotalMin ?? '', r.distinctStations != null ? r.distinctStations : '',
+        r.firstAction || '', r.lastAction || '', r.error || '',
+      ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'));
+    }
+    // Détail des arrêts par sweeper, en dessous, pour audit
+    lines.push('');
+    lines.push('"--- Détail des arrêts par AA ---"');
+    lines.push(['Login', 'De', 'A', 'DureeMin'].join(';'));
+    for (const r of results) {
+      if (!r.gaps) continue;
+      for (const g of r.gaps) {
+        lines.push([r.login, g.from, g.to, g.durationMin].map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'));
+      }
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `fcr-sweeper-comparator-${Date.now()}.csv`;
+    a.click();
+  }
+
+  function makeDraggable(panel, handle) {
+    let ox, oy, dragging = false;
+    handle.addEventListener('mousedown', e => {
+      dragging = true;
+      const rect = panel.getBoundingClientRect();
+      ox = e.clientX - rect.left;
+      oy = e.clientY - rect.top;
+      panel.style.right = 'auto';
+      panel.style.bottom = 'auto';
+    });
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      panel.style.left = e.clientX - ox + 'px';
+      panel.style.top = e.clientY - oy + 'px';
+    });
+    document.addEventListener('mouseup', () => (dragging = false));
+  }
+
+  /* =========================================================
+   *  INIT
+   * ========================================================= */
+  if (!document.getElementById('fcr-cmp-panel')) buildPanel();
+})();
