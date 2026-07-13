@@ -74,6 +74,9 @@
 
     // Enregistre une action ou une impression, et détecte les arrêts > 15 min
     // entre deux actions (pareil que la logique de FCR Trace Sweeper).
+    // fcrClickIsImpression : si un clic a déjà déclenché une impression (ex: Print
+    // depuis le menu barcode), on ne le recompte pas en plus comme action générique.
+    let fcrClickIsImpression = false;
     function fcrActivityTrack(kind) {
         const now = Date.now();
         const gapMin = (now - fcrActivityState.lastActionAt) / 60000;
@@ -85,12 +88,42 @@
             });
         }
         fcrActivityState.lastActionAt = now;
-        if (kind === 'impression') fcrActivityState.impressionsCount++;
-        else fcrActivityState.actionsCount++;
+        if (kind === 'impression') {
+            fcrActivityState.impressionsCount++;
+            fcrClickIsImpression = true; // ce clic-ci est déjà compté, pas de doublon en 'action'
+        } else {
+            fcrActivityState.actionsCount++;
+        }
     }
 
-    // Compteur d'actions générique : tout clic sur la page (proxy d'activité).
-    document.addEventListener('click', () => fcrActivityTrack('action'), { capture: true, passive: true });
+    // Un élément est considéré "cliquable" s'il correspond à un élément interactif
+    // standard, ou à un élément custom stylé en curseur pointeur (beaucoup d'éléments
+    // de ce script sont des <div>/<li> cliquables via jQuery plutôt que des <button>).
+    const FCR_CLICKABLE_SELECTOR = 'a, button, input, select, textarea, label, ' +
+        '[role="button"], [role="link"], [role="menuitem"], [role="tab"], [onclick], [tabindex]';
+    function fcrIsClickableTarget(el) {
+        if (!el || el.nodeType !== 1) return false;
+        if (el.closest && el.closest(FCR_CLICKABLE_SELECTOR)) return true;
+        try {
+            return window.getComputedStyle(el).cursor === 'pointer';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // Compteur d'actions générique : uniquement les clics sur un élément cliquable
+    // (bouton, lien, menu, élément custom en cursor:pointer...) — pas les clics
+    // dans le vide (fond de page, zones non interactives).
+    // Le comptage est différé d'un tick (setTimeout 0) pour laisser le temps aux
+    // handlers de clic "métier" (ex: Print d'un barcode) de tracker une impression
+    // en premier — si c'est le cas, on n'ajoute pas aussi une action pour ce clic.
+    document.addEventListener('click', (e) => {
+        if (!fcrIsClickableTarget(e.target)) return;
+        fcrClickIsImpression = false;
+        setTimeout(() => {
+            if (!fcrClickIsImpression) fcrActivityTrack('action');
+        }, 0);
+    }, { capture: true, passive: true });
 
     function fcrActivitySendHourly() {
         const { url, key } = fcrActGetConfig();
@@ -125,7 +158,28 @@
         fcrActivityState.idleGaps = [];
         fcrActivityState.periodStart = payload.periodEnd;
     }
-    setInterval(fcrActivitySendHourly, 60 * 60 * 1000);
+
+    // ---- Anti reset-sur-navigation -----------------------------------------
+    // fcrActivityState/setInterval vivent en mémoire JS : si la page se
+    // recharge (navigation FCResearch), tout repart de zéro et le compte à
+    // rebours ne va jamais au bout. On persiste donc le timestamp du dernier
+    // envoi via GM_setValue (ça survit à un rechargement de page), et on
+    // vérifie régulièrement si l'échéance est due plutôt que de compter sur
+    // un setInterval qui tiendrait la durée complète sans interruption.
+    const FCR_ACT_LAST_SEND_KEY = 'fcr_act_last_send_at';
+    const FCR_ACT_INTERVAL_MS = 3 * 60 * 1000; // ⚠️ 3 min pour TEST — remettre 60 * 60 * 1000 après validation
+    const FCR_ACT_CHECK_MS = 20 * 1000; // fréquence de vérification de l'échéance
+
+    function fcrActivityMaybeSend() {
+        const last = GM_getValue(FCR_ACT_LAST_SEND_KEY, 0);
+        const now = Date.now();
+        if (now - last >= FCR_ACT_INTERVAL_MS) {
+            fcrActivitySendHourly();
+            GM_setValue(FCR_ACT_LAST_SEND_KEY, now);
+        }
+    }
+    setInterval(fcrActivityMaybeSend, FCR_ACT_CHECK_MS);
+    fcrActivityMaybeSend(); // vérifie tout de suite au chargement de chaque page
 
     function fcrActivityBuildFloatingConfigUI() {
         const btn = document.createElement('div');
