@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         FCR Lite Ultra V4 — SWEEP
-// @version      3.2.0
+// @version      3.2.1
 // @description  FCR Lite SWEEP — Thèmes, Prep, God Mode Print, Hazmat, Étiquettes, Couleurs, CSV, Weight (sans Bin Check, Floor Finder, Analyse Palette). v3.2.0 : le thème "🌃 Néon Bleu" est fusionné avec le thème cyberpunk "Neo-Tokyo" (Sideline Refonte JB Edition) — palette cyan/magenta, coins chanfreinés, titres façon tube néon scintillant. L'image de fond du thème reste inchangée.
 // @author       @JEANBAYD
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2*
@@ -209,7 +209,7 @@
     // Détection globale page MoveItemsApp — même traitement que EditItemsApp (lisibilité).
     const FCR_IS_MOVEITEMS_PAGE = window.location.pathname.startsWith('/app/moveitems');
 
-    // Recherche contenant (?s=tsX17kw7csr…) vs recherche ASIN (?s=B0xxxxx, X0xxxxxx, Zzxxxxxx…)
+    // Recherche contenant (?s=tsX17kw7csr… ou ?s=csX17kw7csr…) vs recherche ASIN (?s=B0xxxxx, X0xxxxxx, Zzxxxxxx…)
     // Utilisé pour n'activer certaines fonctionnalités (impression stock) que sur les
     // pages de résultats de recherche par contenant.
     function getSearchParamS() {
@@ -217,7 +217,7 @@
         catch (e) { return ''; }
     }
     function isContainerSearchPage() {
-        return /^ts/i.test(getSearchParamS());
+        return /^(ts|cs)/i.test(getSearchParamS());
     }
 
     // ════════════════════════════════════════════════════════════════
