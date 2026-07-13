@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FCR Lite Ultra V4 — SWEEP
-// @version      3.2.0
-// @description  FCR Lite SWEEP — Thèmes, Prep, God Mode Print, Hazmat, Étiquettes, Couleurs, CSV, Weight (sans Bin Check, Floor Finder, Analyse Palette). v3.2.0 : le thème "🌃 Néon Bleu" est fusionné avec le thème cyberpunk "Neo-Tokyo" (Sideline Refonte JB Edition) — palette cyan/magenta, coins chanfreinés, titres façon tube néon scintillant. L'image de fond du thème reste inchangée.
+// @version      3.3.0
+// @description  FCR Lite SWEEP — Thèmes, Prep, God Mode Print, Hazmat, Étiquettes, Couleurs, CSV, Weight (sans Bin Check, Floor Finder, Analyse Palette). v3.3.0 : le comptage d'"actions" envoyé au dashboard (📡) n'est plus basé sur les clics génériques dans l'interface (peu fiable) — c'est désormais le nombre réel de lignes/étiquettes envoyées à l'impression (impression étiquette, print ASIN, print barcode, free print, print search box...) qui compte, quantité incluse. v3.2.0 : le thème "🌃 Néon Bleu" est fusionné avec le thème cyberpunk "Neo-Tokyo" (Sideline Refonte JB Edition) — palette cyan/magenta, coins chanfreinés, titres façon tube néon scintillant. L'image de fond du thème reste inchangée.
 // @author       @JEANBAYD
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2*
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2/*
@@ -72,12 +72,19 @@
         periodStart: new Date().toISOString(),
     };
 
-    // Enregistre une action ou une impression, et détecte les arrêts > 15 min
-    // entre deux actions (pareil que la logique de FCR Trace Sweeper).
-    // fcrClickIsImpression : si un clic a déjà déclenché une impression (ex: Print
-    // depuis le menu barcode), on ne le recompte pas en plus comme action générique.
-    let fcrClickIsImpression = false;
-    function fcrActivityTrack(kind) {
+    // Enregistre une "action" réelle et détecte les arrêts > 15 min entre deux
+    // actions (pareil que la logique de FCR Trace Sweeper).
+    // Une action = une ligne / étiquette réellement envoyée à l'impression
+    // (impression étiquette, print ASIN, print barcode, free print, print
+    // search box, etc.) — PAS un simple clic générique dans l'interface, qui
+    // n'est pas fiable (clics de navigation, d'ouverture de menu, etc. n'ont
+    // rien à voir avec du travail effectif).
+    // qty : nombre de lignes/étiquettes réellement imprimées par cet appel
+    // (ex: quantité choisie dans le prompt Print, ou nombre de pages d'un lot
+    // d'étiquettes) — chaque ligne compte comme une action à part entière,
+    // pas seulement le clic sur le bouton.
+    function fcrActivityTrack(qty) {
+        const n = Math.max(1, parseInt(qty, 10) || 1);
         const now = Date.now();
         const gapMin = (now - fcrActivityState.lastActionAt) / 60000;
         if (gapMin > 15) {
@@ -88,42 +95,9 @@
             });
         }
         fcrActivityState.lastActionAt = now;
-        if (kind === 'impression') {
-            fcrActivityState.impressionsCount++;
-            fcrClickIsImpression = true; // ce clic-ci est déjà compté, pas de doublon en 'action'
-        } else {
-            fcrActivityState.actionsCount++;
-        }
+        fcrActivityState.actionsCount += n;
+        fcrActivityState.impressionsCount += n;
     }
-
-    // Un élément est considéré "cliquable" s'il correspond à un élément interactif
-    // standard, ou à un élément custom stylé en curseur pointeur (beaucoup d'éléments
-    // de ce script sont des <div>/<li> cliquables via jQuery plutôt que des <button>).
-    const FCR_CLICKABLE_SELECTOR = 'a, button, input, select, textarea, label, ' +
-        '[role="button"], [role="link"], [role="menuitem"], [role="tab"], [onclick], [tabindex]';
-    function fcrIsClickableTarget(el) {
-        if (!el || el.nodeType !== 1) return false;
-        if (el.closest && el.closest(FCR_CLICKABLE_SELECTOR)) return true;
-        try {
-            return window.getComputedStyle(el).cursor === 'pointer';
-        } catch (e) {
-            return false;
-        }
-    }
-
-    // Compteur d'actions générique : uniquement les clics sur un élément cliquable
-    // (bouton, lien, menu, élément custom en cursor:pointer...) — pas les clics
-    // dans le vide (fond de page, zones non interactives).
-    // Le comptage est différé d'un tick (setTimeout 0) pour laisser le temps aux
-    // handlers de clic "métier" (ex: Print d'un barcode) de tracker une impression
-    // en premier — si c'est le cas, on n'ajoute pas aussi une action pour ce clic.
-    document.addEventListener('click', (e) => {
-        if (!fcrIsClickableTarget(e.target)) return;
-        fcrClickIsImpression = false;
-        setTimeout(() => {
-            if (!fcrClickIsImpression) fcrActivityTrack('action');
-        }, 0);
-    }, { capture: true, passive: true });
 
     function fcrActivitySendHourly() {
         const { url, key } = fcrActGetConfig();
@@ -167,7 +141,7 @@
     // vérifie régulièrement si l'échéance est due plutôt que de compter sur
     // un setInterval qui tiendrait la durée complète sans interruption.
     const FCR_ACT_LAST_SEND_KEY = 'fcr_act_last_send_at';
-    const FCR_ACT_INTERVAL_MS = 30 * 60 * 1000; // ⚠️ 3 min pour TEST — remettre 60 * 60 * 1000 après validation
+    const FCR_ACT_INTERVAL_MS = 3 * 60 * 1000; // ⚠️ 3 min pour TEST — remettre 60 * 60 * 1000 après validation
     const FCR_ACT_CHECK_MS = 20 * 1000; // fréquence de vérification de l'échéance
 
     function fcrActivityMaybeSend() {
@@ -4054,7 +4028,7 @@ table tr:hover td, table tr:hover th {
             }
 
             function printBarcode(text, quantity) {
-                if (typeof fcrActivityTrack === 'function') fcrActivityTrack('impression');
+                if (typeof fcrActivityTrack === 'function') fcrActivityTrack(quantity);
                 const printHost = "http://localhost:5965/printer";
                 const badgeId = $.cookie('fcmenu-employeeId') || '';
                 const encodedText = text.split('').map(c => c.charCodeAt(0).toString(16)).join('');
@@ -4318,13 +4292,13 @@ table tr:hover td, table tr:hover th {
 
 
             function quickPrint(asin, quantity, desc, type, link) {
-                if (typeof fcrActivityTrack === 'function') fcrActivityTrack('impression');
+                if (typeof fcrActivityTrack === 'function') fcrActivityTrack(quantity);
                 asin = asin.trim();
                 getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(asin) + "&text=" + asciihex(asin) + "&quantity=" + quantity + "&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=" + asciihex(desc) + "&seq=" + genId(), "Print Button", asin, type, quantity, desc, link);
             }
 
             function quickPrint2(barcode, type) {
-                if (typeof fcrActivityTrack === 'function') fcrActivityTrack('impression');
+                if (typeof fcrActivityTrack === 'function') fcrActivityTrack(1);
                 barcode = barcode.trim();
                 getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(barcode) + "&text=" + asciihex(barcode) + "&quantity=1&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=&seq=" + genId(), "Alt-Click", barcode, type, 1, "N/A", "N/A");
             }
@@ -4493,9 +4467,10 @@ table tr:hover td, table tr:hover th {
                         alert("Please enter text into the barcode box.");
                     } else if (barcodeText.value.includes("LPN")) {
                         const response = confirm("LPN's are considered unique and should not be printed. OK to continue?");
-                        if (response) getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(barcodeText.value) + "&text=" + asciihex(barcodeText.value) + "&quantity=" + qty + "&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=&seq=" + genId(), "Free Print", barcodeText.value, "LPN", qty, "N/A", "N/A");
+                        if (response) { if (typeof fcrActivityTrack === 'function') fcrActivityTrack(qty); getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(barcodeText.value) + "&text=" + asciihex(barcodeText.value) + "&quantity=" + qty + "&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=&seq=" + genId(), "Free Print", barcodeText.value, "LPN", qty, "N/A", "N/A"); }
                         else { Print_Status = "Cancelled"; sendMessageNew("Free Print", barcodeText.value, "LPN", qty, "N/A", "N/A"); }
                     } else {
+                        if (typeof fcrActivityTrack === 'function') fcrActivityTrack(qty);
                         getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(barcodeText.value) + "&text=" + asciihex(barcodeText.value) + "&quantity=" + qty + "&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=&seq=" + genId(), "Free Print", barcodeText.value, "Unknown", qty, "N/A", "N/A");
                     }
                 };
@@ -4575,9 +4550,10 @@ table tr:hover td, table tr:hover th {
                             if (BarcodeSearch == "") BarcodeSearch = document.getElementById("search")?.placeholder || "";
                             if (BarcodeSearch.includes("LPN")) {
                                 const response = confirm("LPN's are considered unique. OK to continue?");
-                                if (response) getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(BarcodeSearch) + "&text=" + asciihex(BarcodeSearch) + "&quantity=" + qty + "&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=&seq=" + genId(), "Print Search Box", BarcodeSearch, "LPN", qty, "N/A", "N/A");
+                                if (response) { if (typeof fcrActivityTrack === 'function') fcrActivityTrack(qty); getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(BarcodeSearch) + "&text=" + asciihex(BarcodeSearch) + "&quantity=" + qty + "&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=&seq=" + genId(), "Print Search Box", BarcodeSearch, "LPN", qty, "N/A", "N/A"); }
                                 else { Print_Status = "Cancelled"; sendMessageNew("Print Search Box", BarcodeSearch, "LPN", qty, "N/A", "N/A"); }
                             } else {
+                                if (typeof fcrActivityTrack === 'function') fcrActivityTrack(qty);
                                 getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(BarcodeSearch) + "&text=" + asciihex(BarcodeSearch) + "&quantity=" + qty + "&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=&seq=" + genId(), "Print Search Box", BarcodeSearch, "Unknown", qty, "N/A", "N/A");
                             }
                         };
@@ -5924,7 +5900,7 @@ table tr:hover td, table tr:hover th {
             w.addEventListener('load', function() {
                 setTimeout(function() {
                     w.focus();
-                    if (typeof fcrActivityTrack === 'function') fcrActivityTrack('impression');
+                    if (typeof fcrActivityTrack === 'function') fcrActivityTrack(qty);
                     w.print();
                     setTimeout(function() { try { w.close(); } catch(e) {} }, 3000);
                 }, 300);
@@ -5942,7 +5918,7 @@ table tr:hover td, table tr:hover th {
                 iframe.onload = function() {
                     try {
                         iframe.contentWindow.focus();
-                        if (typeof fcrActivityTrack === 'function') fcrActivityTrack('impression');
+                        if (typeof fcrActivityTrack === 'function') fcrActivityTrack(qty);
                         iframe.contentWindow.print();
                     } catch(e) {
                         const w = window.open('', '_blank', 'width=500,height=400');
