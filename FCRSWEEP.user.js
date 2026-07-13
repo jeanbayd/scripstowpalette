@@ -167,7 +167,7 @@
     // vérifie régulièrement si l'échéance est due plutôt que de compter sur
     // un setInterval qui tiendrait la durée complète sans interruption.
     const FCR_ACT_LAST_SEND_KEY = 'fcr_act_last_send_at';
-    const FCR_ACT_INTERVAL_MS = 60 * 60 * 1000; // ⚠️ 3 min pour TEST — remettre 60 * 60 * 1000 après validation
+    const FCR_ACT_INTERVAL_MS = 30 * 60 * 1000; // ⚠️ 3 min pour TEST — remettre 60 * 60 * 1000 après validation
     const FCR_ACT_CHECK_MS = 20 * 1000; // fréquence de vérification de l'échéance
 
     function fcrActivityMaybeSend() {
