@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         FCR Lite Ultra V4 — SWEEP
-// @version      3.2.1
+// @version      3.2.0
 // @description  FCR Lite SWEEP — Thèmes, Prep, God Mode Print, Hazmat, Étiquettes, Couleurs, CSV, Weight (sans Bin Check, Floor Finder, Analyse Palette). v3.2.0 : le thème "🌃 Néon Bleu" est fusionné avec le thème cyberpunk "Neo-Tokyo" (Sideline Refonte JB Edition) — palette cyan/magenta, coins chanfreinés, titres façon tube néon scintillant. L'image de fond du thème reste inchangée.
 // @author       @JEANBAYD
 // @match        https://aft-sherlock.eu.aftx.amazonoperations.app/ETZ2*
@@ -29,6 +29,8 @@
 // @connect      localhost
 // @connect      www.amazon.fr
 // @connect      www.pokemon.com
+// @connect      onrender.com
+// @connect      up.railway.app
 // @require      https://code.jquery.com/jquery-3.6.0.min.js
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js
 // @require      https://cdn.jsdelivr.net/npm/jsbarcode@3.11.0/dist/JsBarcode.all.min.js
@@ -36,6 +38,135 @@
 
 (function() {
     'use strict';
+
+    /* ===================== 📡 FCR Activity Push (auto) =====================
+     *  Envoie automatiquement, une fois par heure, un résumé d'activité du
+     *  login courant vers le dashboard (actions, impressions, arrêts >15min).
+     *  Config séparée du reste du script (Tampermonkey ne partage pas le
+     *  stockage entre scripts) — bouton 📡 en bas à droite de l'écran.
+     * ======================================================================= */
+    const FCR_ACT_KEYS = { url: 'fcr_act_backend_url', key: 'fcr_act_api_key' };
+
+    // Valeurs par défaut : pas besoin de configurer quoi que ce soit, ça
+    // fonctionne directement pour toute l'équipe. Le bouton 📡 reste
+    // disponible seulement si jamais l'URL ou la clé changent un jour.
+    const FCR_ACT_DEFAULT_URL = 'https://sweeper-dashboard-production.up.railway.app';
+    const FCR_ACT_DEFAULT_KEY = "bonjour je m'appel lavabo";
+
+    function fcrActGetConfig() {
+        return {
+            url: (GM_getValue(FCR_ACT_KEYS.url, '') || FCR_ACT_DEFAULT_URL).replace(/\/+$/, ''),
+            key: GM_getValue(FCR_ACT_KEYS.key, '') || FCR_ACT_DEFAULT_KEY,
+        };
+    }
+    function fcrActSetConfig(url, key) {
+        GM_setValue(FCR_ACT_KEYS.url, url || '');
+        GM_setValue(FCR_ACT_KEYS.key, key || '');
+    }
+
+    const fcrActivityState = {
+        actionsCount: 0,
+        impressionsCount: 0,
+        lastActionAt: Date.now(),
+        idleGaps: [],
+        periodStart: new Date().toISOString(),
+    };
+
+    // Enregistre une action ou une impression, et détecte les arrêts > 15 min
+    // entre deux actions (pareil que la logique de FCR Trace Sweeper).
+    function fcrActivityTrack(kind) {
+        const now = Date.now();
+        const gapMin = (now - fcrActivityState.lastActionAt) / 60000;
+        if (gapMin > 15) {
+            fcrActivityState.idleGaps.push({
+                from: new Date(fcrActivityState.lastActionAt).toISOString(),
+                to: new Date(now).toISOString(),
+                durationMin: Math.round(gapMin),
+            });
+        }
+        fcrActivityState.lastActionAt = now;
+        if (kind === 'impression') fcrActivityState.impressionsCount++;
+        else fcrActivityState.actionsCount++;
+    }
+
+    // Compteur d'actions générique : tout clic sur la page (proxy d'activité).
+    document.addEventListener('click', () => fcrActivityTrack('action'), { capture: true, passive: true });
+
+    function fcrActivitySendHourly() {
+        const { url, key } = fcrActGetConfig();
+        if (!url || !key) {
+            console.warn('FCR Activity: backend non configuré (bouton 📡) — envoi ignoré.');
+            return;
+        }
+        const login = (typeof getCookie === 'function' ? getCookie('fcmenu-employeeLogin') : '') || 'inconnu';
+        const payload = {
+            login,
+            periodStart: fcrActivityState.periodStart,
+            periodEnd: new Date().toISOString(),
+            actionsCount: fcrActivityState.actionsCount,
+            impressionsCount: fcrActivityState.impressionsCount,
+            idleGaps: fcrActivityState.idleGaps,
+            page: location.href,
+        };
+        GM_xmlhttpRequest({
+            method: 'POST',
+            url: `${url}/api/ingest/activity`,
+            headers: { 'Content-Type': 'application/json', 'x-api-key': key },
+            data: JSON.stringify(payload),
+            timeout: 15000,
+            onload: (res) => console.log('FCR Activity: envoyé au dashboard', res.status),
+            onerror: (e) => console.warn('FCR Activity: erreur réseau vers le dashboard', e),
+            ontimeout: () => console.warn('FCR Activity: timeout vers le dashboard'),
+        });
+        // Reset pour la prochaine heure (lastActionAt n'est PAS réinitialisé,
+        // pour que le calcul d'arrêt reste correct entre deux fenêtres).
+        fcrActivityState.actionsCount = 0;
+        fcrActivityState.impressionsCount = 0;
+        fcrActivityState.idleGaps = [];
+        fcrActivityState.periodStart = payload.periodEnd;
+    }
+    setInterval(fcrActivitySendHourly, 60 * 60 * 1000);
+
+    function fcrActivityBuildFloatingConfigUI() {
+        const btn = document.createElement('div');
+        btn.textContent = '📡';
+        btn.title = 'Config dashboard (activité horaire)';
+        btn.style.cssText = 'position:fixed;bottom:8px;right:8px;z-index:999999;background:#222;color:#fff;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;opacity:.55;box-shadow:0 1px 4px #0006;';
+        btn.addEventListener('mouseenter', () => { btn.style.opacity = '1'; });
+        btn.addEventListener('mouseleave', () => { btn.style.opacity = '.55'; });
+        document.body.appendChild(btn);
+
+        let panel = null;
+        btn.addEventListener('click', () => {
+            if (panel) { panel.remove(); panel = null; return; }
+            const { url, key } = fcrActGetConfig();
+            panel = document.createElement('div');
+            panel.style.cssText = 'position:fixed;bottom:42px;right:8px;z-index:999999;background:#1e1e1e;color:#eee;padding:10px;border-radius:8px;width:220px;font-size:11px;box-shadow:0 2px 10px #0008;font-family:sans-serif;';
+            panel.innerHTML = `
+        <div style="opacity:.7;margin-bottom:4px;">📡 Dashboard activité (Railway)</div>
+        <input type="text" class="fcr-act-url" placeholder="https://xxx.up.railway.app" style="width:100%;margin-bottom:4px;box-sizing:border-box;" value="${url}">
+        <input type="password" class="fcr-act-key" placeholder="Clé API" style="width:100%;margin-bottom:4px;box-sizing:border-box;" value="${key}">
+        <button type="button" class="fcr-act-save" style="width:100%;">💾 Enregistrer</button>
+      `;
+            document.body.appendChild(panel);
+            panel.querySelector('.fcr-act-save').addEventListener('click', () => {
+                fcrActSetConfig(
+                    panel.querySelector('.fcr-act-url').value.trim(),
+                    panel.querySelector('.fcr-act-key').value.trim()
+                );
+                const b = panel.querySelector('.fcr-act-save');
+                const old = b.textContent;
+                b.textContent = '✅ Enregistré';
+                setTimeout(() => { b.textContent = old; }, 1500);
+            });
+        });
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', fcrActivityBuildFloatingConfigUI);
+    } else {
+        fcrActivityBuildFloatingConfigUI();
+    }
+    /* ===================== FIN 📡 FCR Activity Push ===================== */
 
     // ════════════════════════════════════════════════════════════════
     // ===== MODULE SYSTEM =====
@@ -209,7 +340,7 @@
     // Détection globale page MoveItemsApp — même traitement que EditItemsApp (lisibilité).
     const FCR_IS_MOVEITEMS_PAGE = window.location.pathname.startsWith('/app/moveitems');
 
-    // Recherche contenant (?s=tsX17kw7csr… ou ?s=csX17kw7csr…) vs recherche ASIN (?s=B0xxxxx, X0xxxxxx, Zzxxxxxx…)
+    // Recherche contenant (?s=tsX17kw7csr…) vs recherche ASIN (?s=B0xxxxx, X0xxxxxx, Zzxxxxxx…)
     // Utilisé pour n'activer certaines fonctionnalités (impression stock) que sur les
     // pages de résultats de recherche par contenant.
     function getSearchParamS() {
@@ -217,7 +348,7 @@
         catch (e) { return ''; }
     }
     function isContainerSearchPage() {
-        return /^(ts|cs)/i.test(getSearchParamS());
+        return /^ts/i.test(getSearchParamS());
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -3869,6 +4000,7 @@ table tr:hover td, table tr:hover th {
             }
 
             function printBarcode(text, quantity) {
+                if (typeof fcrActivityTrack === 'function') fcrActivityTrack('impression');
                 const printHost = "http://localhost:5965/printer";
                 const badgeId = $.cookie('fcmenu-employeeId') || '';
                 const encodedText = text.split('').map(c => c.charCodeAt(0).toString(16)).join('');
@@ -4132,11 +4264,13 @@ table tr:hover td, table tr:hover th {
 
 
             function quickPrint(asin, quantity, desc, type, link) {
+                if (typeof fcrActivityTrack === 'function') fcrActivityTrack('impression');
                 asin = asin.trim();
                 getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(asin) + "&text=" + asciihex(asin) + "&quantity=" + quantity + "&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=" + asciihex(desc) + "&seq=" + genId(), "Print Button", asin, type, quantity, desc, link);
             }
 
             function quickPrint2(barcode, type) {
+                if (typeof fcrActivityTrack === 'function') fcrActivityTrack('impression');
                 barcode = barcode.trim();
                 getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(barcode) + "&text=" + asciihex(barcode) + "&quantity=1&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=&seq=" + genId(), "Alt-Click", barcode, type, 1, "N/A", "N/A");
             }
@@ -5736,6 +5870,7 @@ table tr:hover td, table tr:hover th {
             w.addEventListener('load', function() {
                 setTimeout(function() {
                     w.focus();
+                    if (typeof fcrActivityTrack === 'function') fcrActivityTrack('impression');
                     w.print();
                     setTimeout(function() { try { w.close(); } catch(e) {} }, 3000);
                 }, 300);
@@ -5753,6 +5888,7 @@ table tr:hover td, table tr:hover th {
                 iframe.onload = function() {
                     try {
                         iframe.contentWindow.focus();
+                        if (typeof fcrActivityTrack === 'function') fcrActivityTrack('impression');
                         iframe.contentWindow.print();
                     } catch(e) {
                         const w = window.open('', '_blank', 'width=500,height=400');
