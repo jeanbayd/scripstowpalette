@@ -10,6 +10,7 @@
 // @match        https://fcresearch-eu.aka.amazon.com/*
 // @match        https://qi-fcresearch-eu.corp.amazon.com/ETZ2*
 // @match        https://fcresearch-eu.aka.amazon.com/*/results?s=*
+// @match        https://qifcr.eu.aftx.amazonoperations.app/*
 // @grant        GM_addStyle
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
