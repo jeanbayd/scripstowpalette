@@ -5,6 +5,7 @@
 // @description  Trace le chemin physique (AA -> bins -> totes -> container history -> station) d'un sweeper sur FCResearch ETZ2 — défile automatiquement le tableau Inventory History pour charger toutes les lignes (tables lazy-load sans DataTables), renseigne Start date/End date et clique Search avant de scraper, analyse directe d'un AA par login + date (sans naviguer sur sa page), résolution de station priorisée via RoboScout (repli sur code dz-P direct), seuil de temps sans action réglable (défaut 15 min, persisté), regroupement des totes successives, propagation de localisation, filtrage pc99 non résolus, historique des temps sans action (pauses planifiées exclues) avec total, rework visuel, résistance au throttling d'onglet en arrière-plan
 // @author       JB
 // @match        https://fcresearch-eu.aka.amazon.com/ETZ2/results?s=*
+// @match        https://qifcr.eu.aftx.amazonoperations.app/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_xmlhttpRequest
