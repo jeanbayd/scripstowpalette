@@ -5,6 +5,7 @@
 // @description  Compare plusieurs sweepers sur une période (date/heure de début → date/heure de fin, éventuellement sur plusieurs jours) : actions totales / par heure travaillée, liste+durée des arrêts (>=15 min, seuil réglable) avec total, temps moyen/médian entre deux actions (régularité), nombre de stations distinctes visitées (résolution RoboScout optionnelle), avec moyenne/médiane d'équipe en repère pour situer chaque AA au-dessus/en-dessous plutôt qu'en absolu. Outil séparé de FCR Trace Sweeper, réutilise le même pipeline de scraping.
 // @author       JB
 // @match        https://fcresearch-eu.aka.amazon.com/ETZ2/*
+// @match        https://qifcr.eu.aftx.amazonoperations.app/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_xmlhttpRequest
