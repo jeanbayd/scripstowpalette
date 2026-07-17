@@ -4089,6 +4089,7 @@ table tr:hover td, table tr:hover th {
 
     function createPrepButton(text) {
         const button = document.createElement('button');
+        button.type = 'button';
         button.className = 'LoadPrep-button';
         button.textContent = text;
         button.style.marginBottom = '1px';
@@ -4293,6 +4294,7 @@ table tr:hover td, table tr:hover th {
         const inventoryHeader = document.querySelector('[data-section-type="inventory"] .section-title');
         if (!inventoryHeader || document.getElementById('weightButton')) return;
         const button = document.createElement('button');
+        button.type = 'button';
         button.id = 'weightButton'; button.textContent = 'Calculate Weight';
         button.addEventListener('click', calculateContainerWeight);
         inventoryHeader.appendChild(button);
@@ -4385,6 +4387,7 @@ table tr:hover td, table tr:hover th {
         const inventoryHeader = document.querySelector('[data-section-type="inventory"] .section-title');
         if (!inventoryHeader || document.getElementById('totalPriceButton')) return;
         const button = document.createElement('button');
+        button.type = 'button';
         button.id = 'totalPriceButton';
         button.className = 'LoadPrep-button';
         button.textContent = '💰 Prix Total';
@@ -4482,6 +4485,7 @@ table tr:hover td, table tr:hover th {
         const inventoryHeader = document.querySelector('[data-section-type="inventory"] .section-title');
         if (!inventoryHeader || document.getElementById('csvExportButton')) return;
         const button = document.createElement('button');
+        button.type = 'button';
         button.id = 'csvExportButton'; button.textContent = 'Export CSV'; button.className = 'LoadPrep-button';
         button.addEventListener('click', exportInventoryToCSV);
         inventoryHeader.appendChild(button);
@@ -4516,6 +4520,7 @@ table tr:hover td, table tr:hover th {
         if (!historySection || document.getElementById('csvHistoryButton')) return;
         if (!document.querySelector('#table-inventory-history')) return;
         const button = document.createElement('button');
+        button.type = 'button';
         button.id = 'csvHistoryButton'; button.textContent = 'Export History CSV'; button.className = 'LoadPrep-button';
         button.addEventListener('click', exportInventoryHistoryToCSV);
         historySection.appendChild(button);
@@ -5021,6 +5026,7 @@ table tr:hover td, table tr:hover th {
                 fpQtyLabel.className = 'fcr-freeprint-qty-label';
                 fpQtyLabel.textContent = 'Quantité :';
                 const fpQtyMinus = document.createElement('button');
+                fpQtyMinus.type = 'button';
                 fpQtyMinus.className = 'fcr-freeprint-qty-btn';
                 fpQtyMinus.textContent = '−';
                 fpQtyMinus.onclick = () => { const v = parseInt(fpQtyInput.value)||1; if (v > 1) fpQtyInput.value = v - 1; };
@@ -5030,6 +5036,7 @@ table tr:hover td, table tr:hover th {
                 fpQtyInput.min = 1;
                 fpQtyInput.value = 1;
                 const fpQtyPlus = document.createElement('button');
+                fpQtyPlus.type = 'button';
                 fpQtyPlus.className = 'fcr-freeprint-qty-btn';
                 fpQtyPlus.textContent = '+';
                 fpQtyPlus.onclick = () => { fpQtyInput.value = (parseInt(fpQtyInput.value)||1) + 1; };
@@ -5686,6 +5693,7 @@ table tr:hover td, table tr:hover th {
         const inventoryHeader = document.querySelector('[data-section-type="inventory"] .section-title');
         if (!inventoryHeader || document.getElementById('inventoryHazmatChip')) return;
         const chip = document.createElement('button');
+        chip.type = 'button';
         chip.id = 'inventoryHazmatChip';
         chip.className = 'LoadPrep-button';
         chip.textContent = '☢️ Hazmat : —';
@@ -5874,6 +5882,7 @@ table tr:hover td, table tr:hover th {
         const inventoryHeader = document.querySelector('[data-section-type="inventory"] .section-title');
         if (!inventoryHeader || document.getElementById('floorSortButton')) return;
         const button = document.createElement('button');
+        button.type = 'button';
         button.id = 'floorSortButton';
         button.className = 'LoadPrep-button';
         button.textContent = fcrFloorSortButtonLabel();
@@ -6634,6 +6643,7 @@ table tr:hover td, table tr:hover th {
         favRow.appendChild(favLbl);
         FAVORITES.forEach(fav => {
             const btn = document.createElement('button');
+            btn.type = 'button';
             btn.textContent = `${fav.icon} ${fav.label}`;
             btn.title = `Imprimer 1× ${fav.label}`;
             btn.style.cssText = `
@@ -7437,6 +7447,7 @@ table tr:hover td, table tr:hover th {
                 header.className = 'fcr-status-modal-header';
                 header.innerHTML = `<span>Edit Item — Container ${container} / Item ${asin}</span>`;
                 const closeBtn = document.createElement('button');
+                closeBtn.type = 'button';
                 closeBtn.className = 'fcr-status-modal-close';
                 closeBtn.textContent = '✕';
                 header.appendChild(closeBtn);
