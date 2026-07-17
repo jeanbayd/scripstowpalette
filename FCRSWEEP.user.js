@@ -518,8 +518,14 @@ function fcrActivityMaybeSend() {
         fcrActivitySendHourly();
     }
 }
-setInterval(fcrActivityMaybeSend, FCR_ACT_CHECK_MS);
-fcrActivityMaybeSend();
+// ---- Envoi automatique DÉSACTIVÉ (sur demande) ----
+// L'ancien déclenchement périodique (vérification toutes les 20s + envoi
+// automatique toutes les ~60min via fcrActivitySendHourly) est coupé ici.
+// Seul l'envoi MANUEL via le bouton 🔎 (loupe, backfill journée complète)
+// reste actif. Pour réactiver l'automatique, décommenter les 2 lignes
+// ci-dessous.
+// setInterval(fcrActivityMaybeSend, FCR_ACT_CHECK_MS);
+// fcrActivityMaybeSend();
 
 /* ---- Bouton flottant de config : identique à l'original, inchangé ---- */
 function fcrActivityBuildFloatingConfigUI() {
