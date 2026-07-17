@@ -73,7 +73,11 @@
  *  FCResearch.
  * ========================================================================= */
 
-
+/* ===================== 📡 FCR Activity Push (auto) — VRAIS MOUVEMENTS =====================
+ *  Interroge périodiquement les vraies données FCResearch (comme FCR Trace
+ *  Sweeper / FCR Sweeper Comparator) pour le login courant, et pousse le
+ *  résultat vers le dashboard. Config séparée du reste du script (bouton 📡
+ *  en bas à droite de l'écran).
  * ======================================================================= */
 const FCR_ACT_KEYS = { url: 'fcr_act_backend_url', key: 'fcr_act_api_key', periodStart: 'fcr_act_period_start' };
 const FCR_ACT_DEFAULT_URL = 'https://sweeper-dashboard-production.up.railway.app';
@@ -90,7 +94,18 @@ function fcrActSetConfig(url, key) {
     GM_setValue(FCR_ACT_KEYS.key, key || '');
 }
 
-
+/* ---- Constantes reprises à l'identique de FCR Trace Sweeper / Comparator ----
+ * Ordre de préférence : fcresearch-eu.aka.amazon.com d'abord, qifcr en repli.
+ * IMPORTANT : le scraping ci-dessous se fait via un iframe SAME-ORIGIN — un
+ * iframe pointant vers un domaine différent de la page actuelle est bloqué
+ * par le navigateur (Same-Origin Policy), quel que soit l'ordre souhaité. Il
+ * est donc impossible d'essayer "A puis B" en cours de route depuis une même
+ * page : on utilise toujours le domaine sur lequel on se trouve RÉELLEMENT.
+ * C'était justement le bug : FCR_ACT_BASE_URL était figé sur qifcr, donc le
+ * heartbeat/backfill échouait silencieusement dès que vous étiez sur
+ * fcresearch-eu.aka.amazon.com (les deux hosts sont dans @match, mais un
+ * seul était géré ici). Les deux sont maintenant supportés de façon
+ * dynamique. */
 const FCR_ACT_HOSTS_PRIORITY = ['fcresearch-eu.aka.amazon.com', 'qifcr.eu.aftx.amazonoperations.app'];
 const FCR_ACT_HOST_OK = FCR_ACT_HOSTS_PRIORITY.includes(location.hostname) ? location.hostname : null;
 const FCR_ACT_BASE_URL = FCR_ACT_HOST_OK ? `https://${FCR_ACT_HOST_OK}/ETZ2/results?s=` : '';
