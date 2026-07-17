@@ -79,9 +79,9 @@
  *  résultat vers le dashboard. Config séparée du reste du script (bouton 📡
  *  en bas à droite de l'écran).
  * ======================================================================= */
-const FCR_ACT_KEYS = { url: 'fcr_act_backend_url', key: 'fcr_act_api_key', periodStart: 'fcr_act_period_start' };
+const FCR_ACT_KEYS = { url: 'fcr_act_backend_url', key: 'fcr_act_api_key' };
 const FCR_ACT_DEFAULT_URL = 'https://sweeper-dashboard-production.up.railway.app';
-const FCR_ACT_DEFAULT_KEY = " tu as crus que j'allais te donner le code ";
+const FCR_ACT_DEFAULT_KEY = "sorry je garde le code pour moi ";
 
 function fcrActGetConfig() {
     return {
@@ -109,7 +109,7 @@ function fcrActSetConfig(url, key) {
 const FCR_ACT_HOSTS_PRIORITY = ['fcresearch-eu.aka.amazon.com', 'qifcr.eu.aftx.amazonoperations.app'];
 const FCR_ACT_HOST_OK = FCR_ACT_HOSTS_PRIORITY.includes(location.hostname) ? location.hostname : null;
 const FCR_ACT_BASE_URL = FCR_ACT_HOST_OK ? `https://${FCR_ACT_HOST_OK}/ETZ2/results?s=` : '';
-const FCR_ACT_TOTE_REGEX = /^tsX/i;
+const FCR_ACT_TOTE_REGEX = /^(tsX|P-|csX|paX)/i;
 const FCR_ACT_EXCLUDED_BREAKS = [{ start: '10:00', end: '10:30' }];
 
 /* ---- Métronome (identique aux 2 scripts : Worker + repli setInterval) ---- */
@@ -339,7 +339,7 @@ async function fcrActScrapeInventoryTable(doc, range, log) {
     const mapped = rawRows.map(r => ({ date: r[iDate] || '', oldBin: r[iOldBin] || '', newBin: r[iNewBin] || '' }));
     const afterDate = mapped.filter(r => fcrActIsRowInDateTimeRange(r.date, range));
     const afterTote = afterDate.filter(r => FCR_ACT_TOTE_REGEX.test(r.oldBin) || FCR_ACT_TOTE_REGEX.test(r.newBin));
-    log && log(`${rawRows.length} ligne(s) brute(s) → ${afterDate.length} après filtre période → ${afterTote.length} avec une tote.`);
+    log && log(`${rawRows.length} ligne(s) brute(s) → ${afterDate.length} après filtre période → ${afterTote.length} avec un bin/tote/carton/palette.`);
     return afterTote;
 }
 function fcrActLoadInHiddenIframe(url) {
@@ -412,120 +412,6 @@ function fcrActDateOnlyIso(d) {
     const pad = n => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
-
-/* ---- État : uniquement les impressions restent "accumulées" (les vrais
- *      mouvements, eux, sont recalculés à chaque envoi depuis FCResearch) ----
- *  IMPORTANT : periodStart est repris depuis GM_setValue (survit aux
- *  navigations/reloads, puisqu'un script Tampermonkey se réinjecte
- *  entièrement à chaque changement de page). Sans ça, periodStart repartait
- *  de "maintenant" à chaque navigation et une partie des mouvements réels
- *  n'était jamais interrogée -> trous silencieux dans la journée. */
-const fcrActivityState = {
-    periodStart: GM_getValue(FCR_ACT_KEYS.periodStart, '') || (() => {
-        const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString();
-    })(),
-    impressionsCount: 0,
-};
-
-// Conservé tel quel pour compatibilité avec les 5 appels existants
-// `fcrActivityTrack('impression')` disséminés dans le script (God Mode Print...).
-// Le paramètre 'action' n'est plus utilisé : plus aucun appel document-wide sur les clics.
-function fcrActivityTrack(kind) {
-    if (kind === 'impression') fcrActivityState.impressionsCount++;
-}
-
-async function fcrActivitySendHourly() {
-    const { url, key } = fcrActGetConfig();
-    if (!url || !key) {
-        console.warn('FCR Activity: backend non configuré (bouton 📡) — envoi ignoré.');
-        return;
-    }
-
-    // Le scraping ne peut fonctionner qu'en same-origin avec FCResearch (contrainte
-    // navigateur sur la lecture d'un iframe cross-origin). Si on n'y est pas
-    // actuellement, on reporte : periodStart n'est PAS avancé, donc rien n'est perdu.
-    if (location.hostname !== FCR_ACT_HOST_OK) {
-        console.log(`FCR Activity: page actuelle (${location.hostname}) — vérification des mouvements différée jusqu'au prochain passage sur FCResearch.`);
-        return;
-    }
-
-    const login = (typeof getCookie === 'function' ? getCookie('fcmenu-employeeLogin') : '') || null;
-    if (!login) {
-        console.warn('FCR Activity: login introuvable (cookie fcmenu-employeeLogin) — envoi ignoré.');
-        return;
-    }
-
-    const periodStartDate = new Date(fcrActivityState.periodStart);
-    const periodEndDate = new Date();
-    const range = {
-        startDate: periodStartDate,
-        endDate: periodEndDate,
-        startDateISO: fcrActDateOnlyIso(periodStartDate),
-        endDateISO: fcrActDateOnlyIso(periodEndDate),
-    };
-
-    let invRows;
-    try {
-        invRows = await fcrActGetInventoryRowsForLogin(login, range, m => console.log('FCR Activity:', m));
-    } catch (e) {
-        console.warn('FCR Activity: échec récupération des mouvements réels — envoi reporté.', e);
-        return; // periodStart non avancé -> retenté à la prochaine vérification (20s)
-    }
-
-    const sorted = invRows.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-    const gaps = fcrActComputeInactivityGaps(sorted, 15); // seuil identique à Trace/Comparator
-
-    const payload = {
-        login,
-        periodStart: periodStartDate.toISOString(),
-        periodEnd: periodEndDate.toISOString(),
-        actionsCount: sorted.length, // même définition que "totalActions" dans Trace/Comparator
-        impressionsCount: fcrActivityState.impressionsCount,
-        idleGaps: gaps,
-        page: location.href,
-    };
-
-    GM_xmlhttpRequest({
-        method: 'POST',
-        url: `${url}/api/ingest/activity`,
-        headers: { 'Content-Type': 'application/json', 'x-api-key': key },
-        data: JSON.stringify(payload),
-        timeout: 20000,
-        onload: (res) => {
-            console.log(`FCR Activity: envoyé au dashboard — ${payload.actionsCount} mouvement(s) réel(s).`, res.status);
-            fcrActivityState.impressionsCount = 0;
-            fcrActivityState.periodStart = payload.periodEnd; // avancé SEULEMENT après succès confirmé
-            GM_setValue(FCR_ACT_KEYS.periodStart, payload.periodEnd); // <-- persiste : survit à la prochaine navigation
-            GM_setValue(FCR_ACT_LAST_SEND_KEY, Date.now()); // <-- déplacé ici : la pendule des 60min n'avance QUE sur succès confirmé
-        },
-        onerror: (e) => console.warn('FCR Activity: erreur réseau vers le dashboard', e),
-        ontimeout: () => console.warn('FCR Activity: timeout vers le dashboard'),
-    });
-}
-
-/* ---- Anti reset-sur-navigation : identique à l'original ---- */
-const FCR_ACT_LAST_SEND_KEY = 'fcr_act_last_send_at';
-const FCR_ACT_INTERVAL_MS = 2 * 60 * 1000; // 60 min en production
-const FCR_ACT_CHECK_MS = 20 * 1000;
-
-function fcrActivityMaybeSend() {
-    const last = GM_getValue(FCR_ACT_LAST_SEND_KEY, 0);
-    const now = Date.now();
-    if (now - last >= FCR_ACT_INTERVAL_MS) {
-        // NE PAS avancer FCR_ACT_LAST_SEND_KEY ici : si l'envoi échoue (pas sur
-        // FCResearch, réseau, etc.), on veut réessayer dans ~20s, pas dans 1h.
-        // Il n'est avancé que dans le onload de succès de fcrActivitySendHourly().
-        fcrActivitySendHourly();
-    }
-}
-// ---- Envoi automatique DÉSACTIVÉ (sur demande) ----
-// L'ancien déclenchement périodique (vérification toutes les 20s + envoi
-// automatique toutes les ~60min via fcrActivitySendHourly) est coupé ici.
-// Seul l'envoi MANUEL via le bouton 🔎 (loupe, backfill journée complète)
-// reste actif. Pour réactiver l'automatique, décommenter les 2 lignes
-// ci-dessous.
-// setInterval(fcrActivityMaybeSend, FCR_ACT_CHECK_MS);
-// fcrActivityMaybeSend();
 
 /* ---- Bouton flottant de config : identique à l'original, inchangé ---- */
 function fcrActivityBuildFloatingConfigUI() {
@@ -681,6 +567,31 @@ async function fcrActBackfillDay(login, dateISO, log) {
     log && log(`Terminé : ${ok}/${slots.length} créneau(x) envoyé(s) pour ${login} (${dateISO}).`);
 }
 
+/* ---- Génère la liste des dates ISO (YYYY-MM-DD) entre deux bornes incluses ---- */
+function fcrActDateRangeList(startISO, endISO) {
+    const out = [];
+    let cur = new Date(`${startISO}T00:00:00`);
+    const end = new Date(`${endISO}T00:00:00`);
+    if (isNaN(cur) || isNaN(end) || cur > end) return out;
+    while (cur <= end) {
+        out.push(fcrActDateOnlyIso(cur));
+        cur = new Date(cur.getTime() + 86400000);
+    }
+    return out;
+}
+
+/* ---- Backfill sur une plage de dates : réutilise fcrActBackfillDay jour par jour ---- */
+async function fcrActBackfillDateRange(login, startISO, endISO, log) {
+    const dates = fcrActDateRangeList(startISO, endISO);
+    if (!dates.length) { log && log('⚠️ Plage de dates invalide.'); return; }
+    if (dates.length > 1) log && log(`Plage : ${dates.length} jour(s) (${startISO} → ${endISO}).`);
+    for (let i = 0; i < dates.length; i++) {
+        const dateISO = dates[i];
+        if (dates.length > 1) log && log(`— jour ${i + 1}/${dates.length} : ${dateISO} —`);
+        await fcrActBackfillDay(login, dateISO, log);
+    }
+}
+
 /* ---- Bouton flottant séparé, discret, indépendant du bouton 📡 (coin opposé) ---- */
 function fcrActBackfillBuildUI() {
     const btn = document.createElement('div');
@@ -700,7 +611,16 @@ function fcrActBackfillBuildUI() {
         panel.innerHTML = `
       <div style="opacity:.7;margin-bottom:4px;">🔎 Charger une/plusieurs journée(s)</div>
       <textarea class="fcr-bf-logins" placeholder="login(s) sweeper — un par ligne ou séparés par une virgule" rows="3" style="width:100%;margin-bottom:4px;box-sizing:border-box;resize:vertical;font-family:inherit;"></textarea>
-      <input type="date" class="fcr-bf-date" style="width:100%;margin-bottom:4px;box-sizing:border-box;" value="${todayISO}">
+      <div style="display:flex;gap:4px;margin-bottom:4px;">
+        <label style="flex:1;min-width:0;">
+          <div style="opacity:.6;margin-bottom:2px;">Du</div>
+          <input type="date" class="fcr-bf-date-from" style="width:100%;box-sizing:border-box;" value="${todayISO}" max="${todayISO}">
+        </label>
+        <label style="flex:1;min-width:0;">
+          <div style="opacity:.6;margin-bottom:2px;">Au</div>
+          <input type="date" class="fcr-bf-date-to" style="width:100%;box-sizing:border-box;" value="${todayISO}" max="${todayISO}">
+        </label>
+      </div>
       <button type="button" class="fcr-bf-load" style="width:100%;">⬇️ Charger la/les journée(s)</button>
       <div class="fcr-bf-log" style="margin-top:6px;max-height:140px;overflow-y:auto;opacity:.75;line-height:1.4;"></div>
     `;
@@ -709,12 +629,17 @@ function fcrActBackfillBuildUI() {
         const log = (msg) => { const d = document.createElement('div'); d.textContent = msg; logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight; };
         panel.querySelector('.fcr-bf-load').addEventListener('click', async () => {
             const logins = fcrActParseLoginsInput(panel.querySelector('.fcr-bf-logins').value);
-            const dateISO = panel.querySelector('.fcr-bf-date').value;
-            if (!logins.length || !dateISO) { log('⚠️ Au moins un login et une date sont requis.'); return; }
+            const dateFromISO = panel.querySelector('.fcr-bf-date-from').value;
+            const dateToISO = panel.querySelector('.fcr-bf-date-to').value;
+            if (!logins.length || !dateFromISO || !dateToISO) { log('⚠️ Au moins un login et une plage de dates sont requis.'); return; }
+            if (dateFromISO > dateToISO) { log('⚠️ La date "Du" doit être antérieure (ou égale) à la date "Au".'); return; }
+            const dates = fcrActDateRangeList(dateFromISO, dateToISO);
+            if (!dates.length) { log('⚠️ Plage de dates invalide.'); return; }
             const b = panel.querySelector('.fcr-bf-load');
             b.disabled = true;
             logEl.innerHTML = '';
-            log(`${logins.length} sweeper(s) à traiter pour le ${dateISO}.`);
+            const rangeLabel = dates.length > 1 ? `${dateFromISO} → ${dateToISO} (${dates.length} jour(s))` : dateFromISO;
+            log(`${logins.length} sweeper(s) à traiter pour ${rangeLabel}.`);
             // Séquentiel (pas en parallèle) : une seule iframe de scraping à la
             // fois, log lisible dans l'ordre, et pas de rafale sur le backend.
             for (let i = 0; i < logins.length; i++) {
@@ -722,7 +647,7 @@ function fcrActBackfillBuildUI() {
                 b.textContent = `⏳ ${i + 1}/${logins.length} — ${login}`;
                 log(`— ${login} —`);
                 try {
-                    await fcrActBackfillDay(login, dateISO, log);
+                    await fcrActBackfillDateRange(login, dateFromISO, dateToISO, log);
                 } catch (e) {
                     log(`❌ ${login} : ` + (e && e.message ? e.message : 'erreur inconnue'));
                 }
@@ -4623,7 +4548,6 @@ table tr:hover td, table tr:hover th {
             }
 
             function printBarcode(text, quantity) {
-                if (typeof fcrActivityTrack === 'function') fcrActivityTrack('impression');
                 const printHost = "http://localhost:5965/printer";
                 const badgeId = $.cookie('fcmenu-employeeId') || '';
                 const encodedText = text.split('').map(c => c.charCodeAt(0).toString(16)).join('');
@@ -4887,13 +4811,11 @@ table tr:hover td, table tr:hover th {
 
 
             function quickPrint(asin, quantity, desc, type, link) {
-                if (typeof fcrActivityTrack === 'function') fcrActivityTrack('impression');
                 asin = asin.trim();
                 getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(asin) + "&text=" + asciihex(asin) + "&quantity=" + quantity + "&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=" + asciihex(desc) + "&seq=" + genId(), "Print Button", asin, type, quantity, desc, link);
             }
 
             function quickPrint2(barcode, type) {
-                if (typeof fcrActivityTrack === 'function') fcrActivityTrack('impression');
                 barcode = barcode.trim();
                 getStatus("http://localhost:5965/printer?action=print&type=barcode&data=" + asciihex(barcode) + "&text=" + asciihex(barcode) + "&quantity=1&badgeid=" + getCookie("fcmenu-employeeId") + "&desc=&seq=" + genId(), "Alt-Click", barcode, type, 1, "N/A", "N/A");
             }
@@ -6497,7 +6419,6 @@ table tr:hover td, table tr:hover th {
             w.addEventListener('load', function() {
                 setTimeout(function() {
                     w.focus();
-                    if (typeof fcrActivityTrack === 'function') fcrActivityTrack('impression');
                     w.print();
                     setTimeout(function() { try { w.close(); } catch(e) {} }, 3000);
                 }, 300);
@@ -6515,7 +6436,6 @@ table tr:hover td, table tr:hover th {
                 iframe.onload = function() {
                     try {
                         iframe.contentWindow.focus();
-                        if (typeof fcrActivityTrack === 'function') fcrActivityTrack('impression');
                         iframe.contentWindow.print();
                     } catch(e) {
                         const w = window.open('', '_blank', 'width=500,height=400');
