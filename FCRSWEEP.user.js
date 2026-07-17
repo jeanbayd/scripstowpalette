@@ -81,7 +81,7 @@
  * ======================================================================= */
 const FCR_ACT_KEYS = { url: 'fcr_act_backend_url', key: 'fcr_act_api_key', periodStart: 'fcr_act_period_start' };
 const FCR_ACT_DEFAULT_URL = 'https://sweeper-dashboard-production.up.railway.app';
-const FCR_ACT_DEFAULT_KEY = "bonjour je m'appel lavabo";
+const FCR_ACT_DEFAULT_KEY = " tu as crus que j'allais te donner le code ";
 
 function fcrActGetConfig() {
     return {
