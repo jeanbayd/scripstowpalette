@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TTIN Floor Sweep — T.corp Panel
-// @version      5.5.9
-// @description  Panneau flottant T.corp : bins par etage (5% stock), filtre etage avant recherche, etage via FCResearch, QR hover tooltip.
+// @version      5.6.0
+// @description  Panneau flottant T.corp : bins par etage (5% stock), tous statuts d'inventaire, filtre etage avant recherche, etage via FCResearch, QR hover tooltip.
 // @author       @JEANBAYD
 // @match        https://t.corp.amazon.com/*
 // @grant        GM_addStyle
@@ -141,6 +141,10 @@
         .ttin-bin:hover { background:#eff6ff; border-color:#bfdbfe; }
         .ttin-bin-name { color:#1f2937; font-family:monospace; }
         .ttin-bin-loc { color:#6b7280; font-size:10px; margin-left:4px; }
+        .ttin-bin-disp {
+            color:#7c3aed; font-size:9px; margin-left:6px; font-weight:700;
+            background:#f3e8ff; border:1px solid #e9d5ff; border-radius:4px; padding:0 5px;
+        }
         .ttin-bin-qty {
             background:#2563eb; color:#fff; border-radius:4px;
             padding:1px 6px; font-size:10px; font-weight:700; flex-shrink:0;
@@ -601,7 +605,7 @@
         fetchInventory(asin, currentFC, function(bins, totalQty, err) {
             body.innerHTML = '';
             if (err) { body.innerHTML = '<div class="ttin-err">\u274c ' + esc(err) + '</div>'; if (onDone) onDone(); return; }
-            if (!bins.length) { body.innerHTML = '<div class="ttin-empty">Aucun bin SELLABLE sur ' + esc(currentFC) + '</div>'; if (onDone) onDone(); return; }
+            if (!bins.length) { body.innerHTML = '<div class="ttin-empty">Aucun bin trouv\u00e9 sur ' + esc(currentFC) + '</div>'; if (onDone) onDone(); return; }
 
             var maxPerFloor = Math.max(1, Math.floor(totalQty * PCT_MAX));
             var safeAsin = asin.replace(/[^A-Z0-9]/g, '');
@@ -820,7 +824,6 @@
                             : 'Table inventaire introuvable');
                         return;
                     }
-                    var DAMAGED = ['DEFECTIVE','CUST_DAMAGED','DIST_DAMAGED','WHSE_DAMAGED','CARRIER_DAMAGED','EXPIRED'];
                     var bins = [], totalQty = 0;
                     rows.forEach(function(row) {
                         var cells = row.querySelectorAll('td');
@@ -829,7 +832,7 @@
                         var bin  = binEl.textContent.trim();
                         var qty  = parseInt((cells[5] || cells[4]).textContent.trim()) || 0;
                         var disp = cells[6] ? cells[6].textContent.trim() : '';
-                        if (!bin || qty <= 0 || DAMAGED.indexOf(disp) !== -1) return;
+                        if (!bin || qty <= 0) return;
                         bins.push({ bin: bin, qty: qty, disp: disp, floor: null, aisle: '', shelf: '', slot: '' });
                         totalQty += qty;
                     });
@@ -873,7 +876,7 @@
             for (var i = 0; i < list.length; i++) {
                 if (quota <= 0) break;
                 var take = Math.min(list[i].qty, quota);
-                sel.push({ bin: list[i].bin, qty: list[i].qty, take: take, aisle: list[i].aisle, shelf: list[i].shelf, slot: list[i].slot });
+                sel.push({ bin: list[i].bin, qty: list[i].qty, take: take, aisle: list[i].aisle, shelf: list[i].shelf, slot: list[i].slot, disp: list[i].disp });
                 quota -= take;
             }
 
@@ -918,7 +921,8 @@
                     infoSpan.style.cssText = 'flex:1;min-width:0;';
                     infoSpan.innerHTML =
                         '<span class="ttin-bin-name">' + esc(b.bin) + '</span>' +
-                        (loc ? '<span class="ttin-bin-loc">' + esc(loc) + '</span>' : '');
+                        (loc ? '<span class="ttin-bin-loc">' + esc(loc) + '</span>' : '') +
+                        (b.disp ? '<span class="ttin-bin-disp">' + esc(b.disp) + '</span>' : '');
 
                     var actions = document.createElement('span');
                     actions.className = 'ttin-bin-actions';
