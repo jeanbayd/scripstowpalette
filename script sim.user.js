@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TTIN Floor Sweep — T.corp Panel
-// @version      5.7.0
-// @description  Panneau flottant T.corp : bins par etage (5% stock), tous statuts d'inventaire, recherche inversee bin->ticket, filtre etage avant recherche, etage via FCResearch, QR hover tooltip.
+// @version      5.10.1
+// @description  Panneau flottant T.corp : bins par etage (5% stock), tous statuts d'inventaire, recherche inversee bin->ticket (avec photo), photo produit via Amazon.fr (resolution ZZ/X0->B0 par FCResearch), filtre etage avant recherche, etage via FCResearch, QR hover tooltip.
 // @author       @JEANBAYD
 // @match        https://t.corp.amazon.com/*
 // @grant        GM_addStyle
@@ -12,6 +12,7 @@
 // @connect      fcresearch-eu.aka.amazon.com
 // @connect      qi-fcresearch-eu.corp.amazon.com
 // @connect      barcodeapi.org
+// @connect      www.amazon.fr
 
 // ==/UserScript==
 
@@ -114,6 +115,11 @@
         }
         .ttin-card-head:hover { background:#dbeafe; }
         .ttin-card-asin { font-weight:700; color:#1d4ed8; font-size:13px; }
+        .ttin-photo-trigger {
+            cursor:default; font-size:12px; flex-shrink:0; opacity:.75;
+            transition:opacity .15s;
+        }
+        .ttin-photo-trigger:hover { opacity:1; }
         .ttin-card-sub {
             font-size:10px; color:#4b5563; margin-left:7px;
             max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
@@ -429,6 +435,106 @@
         qrHideTimer = setTimeout(function() { qrBubble.style.display = 'none'; }, 80);
     }
 
+    // ── Bulle photo produit (image ASIN, meilleur effort) ──────────────────
+    var photoBubble = document.createElement('div');
+    photoBubble.id = 'ttin-photo-bubble';
+    photoBubble.style.cssText = 'display:none;position:fixed;background:#fff;border-radius:8px;padding:8px;box-shadow:0 4px 24px #000d;z-index:9999999;pointer-events:none;max-width:200px;';
+    document.body.appendChild(photoBubble);
+    var photoHideTimer = null;
+    var photoCache = {}; // asin -> 'ok' | 'fail' (évite de re-tenter en boucle)
+
+    function positionPhotoBubble(trigger) {
+        var r  = trigger.getBoundingClientRect();
+        var bw = photoBubble.offsetWidth  || 160;
+        var bh = photoBubble.offsetHeight || 160;
+        var left = r.left;
+        var top  = r.top - bh - 6;
+        if (top < 4) top = r.bottom + 6;
+        if (left + bw > window.innerWidth - 4) left = window.innerWidth - bw - 4;
+        if (left < 4) left = 4;
+        photoBubble.style.left = left + 'px';
+        photoBubble.style.top  = top  + 'px';
+    }
+
+    function showPhotoBubble(trigger, asin) {
+        clearTimeout(photoHideTimer);
+        photoBubble.style.display = 'block';
+
+        if (photoCache[asin]) {
+            renderPhotoBubbleContent(photoCache[asin]);
+            positionPhotoBubble(trigger);
+            return;
+        }
+
+        photoBubble.innerHTML = '<div style="font-size:10px;color:#6b7280;padding:20px 10px;text-align:center;">R\u00e9solution ASIN + photo\u2026</div>';
+        positionPhotoBubble(trigger);
+
+        fetchProductPage(asin, currentFC, function(result) {
+            var resolvedAsin = result.asin;
+
+            function finish(amazonFrUrl) {
+                var candidates = [];
+                if (amazonFrUrl) candidates.push(amazonFrUrl);       // priorité : vraie page Amazon.fr
+                if (result.imgUrl) candidates.push(result.imgUrl);   // repli : ce que FCResearch a pu fournir
+
+                tryImageChain(candidates, 0, function(workingUrl) {
+                    photoCache[asin] = { imgUrl: workingUrl, resolvedAsin: resolvedAsin };
+                    if (photoBubble.style.display !== 'none') {
+                        renderPhotoBubbleContent(photoCache[asin]);
+                        positionPhotoBubble(trigger);
+                    }
+                }, function() {
+                    photoCache[asin] = { imgUrl: null, resolvedAsin: resolvedAsin };
+                    if (photoBubble.style.display !== 'none') {
+                        renderPhotoBubbleContent(photoCache[asin]);
+                        positionPhotoBubble(trigger);
+                    }
+                });
+            }
+
+            // Amazon.fr n'a de sens que pour un vrai ASIN B0 (produit catalogue)
+            if (resolvedAsin && /^B0/i.test(resolvedAsin)) {
+                fetchAmazonImage(resolvedAsin, finish);
+            } else {
+                finish(null);
+            }
+        });
+    }
+
+    function tryImageChain(urls, idx, onSuccess, onFail) {
+        if (idx >= urls.length) { onFail(); return; }
+        var img = new Image();
+        img.onload = function() {
+            if (img.naturalWidth <= 1) { tryImageChain(urls, idx + 1, onSuccess, onFail); return; }
+            onSuccess(urls[idx]);
+        };
+        img.onerror = function() { tryImageChain(urls, idx + 1, onSuccess, onFail); };
+        img.src = urls[idx];
+    }
+
+    function renderPhotoBubbleContent(data) {
+        if (data.imgUrl) {
+            photoBubble.innerHTML = '';
+            var img = document.createElement('img');
+            img.src = data.imgUrl;
+            img.style.cssText = 'max-width:180px;max-height:180px;display:block;border-radius:4px;';
+            photoBubble.appendChild(img);
+            if (data.resolvedAsin) {
+                var cap = document.createElement('div');
+                cap.style.cssText = 'font-size:9px;color:#6b7280;text-align:center;margin-top:4px;';
+                cap.textContent = data.resolvedAsin;
+                photoBubble.appendChild(cap);
+            }
+        } else {
+            photoBubble.innerHTML = '<div style="font-size:10px;color:#9ca3af;padding:20px 10px;text-align:center;max-width:150px;">\uD83D\uDCF7 Pas de photo trouv\u00e9e' +
+                (data.resolvedAsin ? '<br><small>ASIN r\u00e9solu : ' + esc(data.resolvedAsin) + '</small>' : '') + '</div>';
+        }
+    }
+
+    function hidePhotoBubble() {
+        photoHideTimer = setTimeout(function() { photoBubble.style.display = 'none'; }, 80);
+    }
+
     // Init valeurs
     panel.querySelector('#ttin-fc-inp').value = currentFC;
     panel.querySelector('#ttin-fc-lbl').textContent = currentFC;
@@ -575,9 +681,17 @@
             top.className = 'ttin-lookup-hit-top';
             top.innerHTML =
                 '<span class="ttin-lookup-asin">' + esc(entry.asin || '?') + '</span>' +
+                '<span class="ttin-photo-trigger" title="Voir la photo produit">\uD83D\uDDBC\uFE0F</span>' +
                 (entry.disp ? '<span class="ttin-bin-disp">' + esc(entry.disp) + '</span>' : '') +
                 (entry.inQuota ? '' : '<span class="ttin-lookup-badge warn">Hors quota 5%</span>');
             hit.appendChild(top);
+
+            if (entry.asin) {
+                (function(photoIcon, a) {
+                    photoIcon.addEventListener('mouseenter', function() { showPhotoBubble(photoIcon, a); });
+                    photoIcon.addEventListener('mouseleave', hidePhotoBubble);
+                })(top.querySelector('.ttin-photo-trigger'), entry.asin);
+            }
 
             if (entry.title) {
                 var t = document.createElement('div');
@@ -781,7 +895,13 @@
         headLeft.style.cssText = 'display:flex;align-items:center;min-width:0;gap:6px;';
         headLeft.innerHTML =
             '<span class="ttin-card-asin">' + esc(asin) + '</span>' +
+            '<span class="ttin-photo-trigger" title="Voir la photo produit">\uD83D\uDDBC\uFE0F</span>' +
             '<span class="ttin-card-sub">' + esc(title) + '</span>';
+
+        (function(photoIcon, a) {
+            photoIcon.addEventListener('mouseenter', function() { showPhotoBubble(photoIcon, a); });
+            photoIcon.addEventListener('mouseleave', hidePhotoBubble);
+        })(headLeft.querySelector('.ttin-photo-trigger'), asin);
 
         // Bouton ticket t.corp
         if (ticketId) {
@@ -1029,6 +1149,104 @@
                 : bins.filter(function(b) { return b.floor === floorFilter; });
             onDone(filtered);
         });
+    }
+
+    // ── Page "Product" FCResearch (/{fc}/results?s=CODE) ────────────────────
+    // Résout un ZZ/X0/B0 vers l'ASIN réel + récupère la photo produit affichée
+    // par FCResearch lui-même (fonctionne quel que soit le type de code fourni).
+    // ── Photo produit via Amazon.fr (page publique, HTML rendu côté serveur —
+    // plus fiable que FCResearch qui peut afficher l'image via du JS côté client) ──
+    function fetchAmazonImage(asin, cb) {
+        var url = 'https://www.amazon.fr/dp/' + encodeURIComponent(asin);
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: url,
+            withCredentials: false,
+            onload: function(resp) {
+                try {
+                    var doc = new DOMParser().parseFromString(resp.responseText, 'text/html');
+                    var og = doc.querySelector('meta[property="og:image"]');
+                    if (og && og.getAttribute('content')) { cb(og.getAttribute('content')); return; }
+                    var land = doc.querySelector('#landingImage, #imgTagWrapperId img, #main-image-container img');
+                    if (land) {
+                        var dynAttr = land.getAttribute('data-a-dynamic-image');
+                        if (dynAttr) {
+                            try {
+                                var keys = Object.keys(JSON.parse(dynAttr));
+                                if (keys.length) { cb(keys[0]); return; }
+                            } catch (e) { /* ignore, on tente le src ci-dessous */ }
+                        }
+                        if (land.getAttribute('src')) { cb(land.getAttribute('src')); return; }
+                    }
+                    cb(null);
+                } catch (e) { cb(null); }
+            },
+            onerror: function() { cb(null); }
+        });
+    }
+
+    function fetchProductPage(code, fc, cb) {
+        var url = FCR_BASE + '/' + fc + '/results?s=' + encodeURIComponent(code);
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: url,
+            withCredentials: true,
+            onload: function(resp) {
+                try {
+                    var doc = new DOMParser().parseFromString(resp.responseText, 'text/html');
+                    cb({ asin: extractResolvedAsin(doc, code), imgUrl: extractProductImage(doc) });
+                } catch (e) {
+                    cb({ asin: code, imgUrl: null, error: e.message });
+                }
+            },
+            onerror: function() { cb({ asin: code, imgUrl: null, error: 'network' }); }
+        });
+    }
+
+    function extractResolvedAsin(doc, fallback) {
+        // Cherche une cellule/label "ASIN" et lit la valeur juste à côté
+        var labelEls = doc.querySelectorAll('td, th, dt, div, span, label');
+        for (var i = 0; i < labelEls.length; i++) {
+            if (/^ASIN$/i.test(labelEls[i].textContent.trim())) {
+                var next = labelEls[i].nextElementSibling;
+                if (next) {
+                    var m = next.textContent.match(/\b(B0[A-Z0-9]{8})\b/i);
+                    if (m) return m[1].toUpperCase();
+                    var opt = next.querySelector('option[selected]') || next.querySelector('select option');
+                    if (opt) {
+                        var m2 = opt.textContent.match(/\b(B0[A-Z0-9]{8})\b/i);
+                        if (m2) return m2[1].toUpperCase();
+                    }
+                }
+            }
+        }
+        // Repli : n'importe quel ASIN B0 présent sur la page
+        var m3 = doc.body ? doc.body.textContent.match(/\b(B0[A-Z0-9]{8})\b/) : null;
+        return m3 ? m3[1].toUpperCase() : fallback;
+    }
+
+    function extractProductImage(doc) {
+        var imgs = doc.querySelectorAll('img');
+        // 1) images clairement issues du CDN Amazon
+        for (var i = 0; i < imgs.length; i++) {
+            var src = imgs[i].getAttribute('src') || '';
+            if (/media-amazon|images-amazon|ssl-images-amazon/i.test(src)) return absolutizeFcrUrl(src);
+        }
+        // 2) repli : la première image "assez grande" (pas une icône/logo)
+        for (var j = 0; j < imgs.length; j++) {
+            var w = parseInt(imgs[j].getAttribute('width'), 10) || 0;
+            var h = parseInt(imgs[j].getAttribute('height'), 10) || 0;
+            if (w >= 80 || h >= 80) return absolutizeFcrUrl(imgs[j].getAttribute('src'));
+        }
+        return null;
+    }
+
+    function absolutizeFcrUrl(src) {
+        if (!src) return null;
+        if (/^https?:\/\//i.test(src)) return src;
+        if (src.indexOf('//') === 0) return 'https:' + src;
+        if (src.indexOf('/') === 0) return FCR_BASE + src;
+        return FCR_BASE + '/' + src;
     }
 
     function fetchInventory(asin, fc, cb) {
