@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TTIN Floor Sweep — T.corp Panel
-// @version      5.6.0
-// @description  Panneau flottant T.corp : bins par etage (5% stock), tous statuts d'inventaire, filtre etage avant recherche, etage via FCResearch, QR hover tooltip.
+// @version      5.7.0
+// @description  Panneau flottant T.corp : bins par etage (5% stock), tous statuts d'inventaire, recherche inversee bin->ticket, filtre etage avant recherche, etage via FCResearch, QR hover tooltip.
 // @author       @JEANBAYD
 // @match        https://t.corp.amazon.com/*
 // @grant        GM_addStyle
@@ -206,11 +206,78 @@
             content:''; position:absolute; top:100%; left:50%; transform:translateX(-50%);
             border:7px solid transparent; border-top-color:#fff;
         }
+
+        #ttin-lookup-wrap {
+            background:#fff7ed; border:1.5px solid #fdba74; border-radius:8px;
+            padding:8px 10px; margin-bottom:10px;
+        }
+        #ttin-lookup-title {
+            font-size:11.5px; color:#c2410c; font-weight:700;
+            margin-bottom:6px; display:flex; align-items:center; justify-content:space-between;
+        }
+        #ttin-scan-capture-toggle {
+            background:#ffffff; border:1px solid #fdba74; color:#c2410c;
+            border-radius:20px; padding:2px 9px; cursor:pointer; font-size:10px; font-weight:600;
+        }
+        #ttin-scan-capture-toggle.on { background:#16a34a; border-color:#16a34a; color:#fff; }
+        .ttin-lookup-bar { display:flex; gap:6px; }
+        .ttin-lookup-bar input {
+            flex:1; padding:5px 9px; border-radius:6px;
+            border:1px solid #fdba74; background:#ffffff; color:#1f2937;
+            font-size:12px; outline:none; text-transform:uppercase;
+        }
+        .ttin-lookup-bar input:focus { border-color:#c2410c; box-shadow:0 0 0 2px #fed7aa; }
+        .ttin-lookup-bar button {
+            padding:5px 12px; border-radius:6px; border:none;
+            background:#c2410c; color:#fff; font-weight:700; cursor:pointer; font-size:12px;
+        }
+        .ttin-lookup-bar button:hover { background:#9a3412; }
+        #ttin-lookup-result { margin-top:8px; }
+        .ttin-lookup-hit {
+            background:#ffffff; border:1px solid #fed7aa; border-radius:7px;
+            padding:7px 9px; margin-bottom:6px; font-size:11px;
+        }
+        .ttin-lookup-hit-top { display:flex; align-items:center; gap:6px; margin-bottom:3px; flex-wrap:wrap; }
+        .ttin-lookup-asin { font-weight:700; color:#c2410c; font-size:12px; }
+        .ttin-lookup-badge {
+            font-size:9px; font-weight:700; border-radius:4px; padding:1px 6px;
+        }
+        .ttin-lookup-badge.warn { background:#fef3c7; color:#92400e; border:1px solid #fde68a; }
+        .ttin-lookup-hit-title {
+            color:#4b5563; font-size:10.5px; margin-bottom:3px;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+        }
+        .ttin-lookup-hit-meta { color:#6b7280; font-size:10px; margin-bottom:6px; }
+        .ttin-lookup-hit-actions { display:flex; gap:5px; flex-wrap:wrap; }
+        .ttin-lookup-btn {
+            padding:2px 8px; border-radius:5px; border:1px solid #fdba74;
+            background:#fff7ed; color:#c2410c; font-size:10px; font-weight:600;
+            cursor:pointer; text-decoration:none; white-space:nowrap;
+        }
+        .ttin-lookup-btn:hover { background:#fed7aa; }
+
+        .ttin-done-toggle {
+            display:inline-flex; align-items:center; justify-content:center;
+            width:15px; height:15px; border-radius:4px; border:1px solid #d1d5db;
+            color:#9ca3af; font-size:10px; cursor:pointer; flex-shrink:0; user-select:none;
+        }
+        .ttin-done-toggle:hover { border-color:#22c55e; color:#16a34a; }
+        .ttin-done-toggle.active { background:#22c55e; border-color:#22c55e; color:#fff; }
+        .ttin-bin.done { opacity:.45; }
+        .ttin-bin.done .ttin-bin-name { text-decoration:line-through; }
+        .ttin-bin.flash { background:#fef08a !important; border-color:#eab308 !important; }
     `);
 
     let currentFC     = GM_getValue('ttin_fc', 'ETZ2');
     let selectedFloor = GM_getValue('ttin_floor', 'ALL');
     let selectedType  = 'ALL';
+    // Index invers\u00e9 : bin normalis\u00e9 -> [{ asin, ticketId, title, ... }]
+    var binIndex = new Map();
+    var scanCaptureOn = false;
+
+    function normalizeBin(s) {
+        return String(s || '').trim().toUpperCase().replace(/\s+/g, '');
+    }
     // Types de tickets T.corp reconnus — ordre d'affichage
     var TICKET_TYPES = [
         { key: 'TTIN',       label: 'TTIN',        pattern: /\bTTIN\b/i },
@@ -239,6 +306,16 @@
             '</div>' +
         '</div>' +
         '<div id="ttin-body">' +
+            '<div id="ttin-lookup-wrap">' +
+                '<div id="ttin-lookup-title">\uD83D\uDD0E Retrouver un bin' +
+                    '<button id="ttin-scan-capture-toggle" title="Capture auto d\u2019un scanner code-barres branch\u00e9 au clavier (b\u00eata, voir aide)">\uD83D\uDCE1 Capture scanner : OFF</button>' +
+                '</div>' +
+                '<div class="ttin-lookup-bar">' +
+                    '<input id="ttin-bin-lookup-inp" placeholder="Coller / scanner un bin (ex: P-8-H662E907)" />' +
+                    '<button id="ttin-bin-lookup-go">\uD83D\uDD0D</button>' +
+                '</div>' +
+                '<div id="ttin-lookup-result"></div>' +
+            '</div>' +
             '<div class="ttin-fcbar">' +
                 'FC: <input id="ttin-fc-inp" maxlength="6" />' +
                 '<button id="ttin-fc-ok">\u2713</button>' +
@@ -458,9 +535,144 @@
         if (!asin) return;
         var area = panel.querySelector('#ttin-area');
         area.innerHTML = '';
+        binIndex.clear();
         analyzeASIN(asin, asin, '', area);
     };
     panel.querySelector('#ttin-scan-btn').onclick = scanPage;
+
+    // ── Recherche inversée : bin scanné/collé -> ticket/ASIN correspondant ──
+    function scrollToHit(entry) {
+        if (entry.card) {
+            var body = entry.card.querySelector('.ttin-card-body');
+            if (body && !body.classList.contains('open')) {
+                body.classList.add('open');
+                var tog = entry.card.querySelector('.ttin-card-tog');
+                if (tog) tog.textContent = '\u25bc';
+            }
+        }
+        var target = entry.row || entry.card;
+        if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        if (entry.row) {
+            entry.row.classList.add('flash');
+            setTimeout(function() { entry.row.classList.remove('flash'); }, 1600);
+        }
+    }
+
+    function renderLookupResult(raw, entries) {
+        var box = panel.querySelector('#ttin-lookup-result');
+        box.innerHTML = '';
+        if (!entries || !entries.length) {
+            box.innerHTML = '<div class="ttin-err">\u274c Bin "' + esc(raw) + '" introuvable dans les tickets analys\u00e9s actuellement.</div>';
+            return;
+        }
+        entries.forEach(function(entry) {
+            var hit = document.createElement('div');
+            hit.className = 'ttin-lookup-hit';
+
+            var top = document.createElement('div');
+            top.className = 'ttin-lookup-hit-top';
+            top.innerHTML =
+                '<span class="ttin-lookup-asin">' + esc(entry.asin || '?') + '</span>' +
+                (entry.disp ? '<span class="ttin-bin-disp">' + esc(entry.disp) + '</span>' : '') +
+                (entry.inQuota ? '' : '<span class="ttin-lookup-badge warn">Hors quota 5%</span>');
+            hit.appendChild(top);
+
+            if (entry.title) {
+                var t = document.createElement('div');
+                t.className = 'ttin-lookup-hit-title';
+                t.textContent = entry.title;
+                hit.appendChild(t);
+            }
+
+            var meta = document.createElement('div');
+            meta.className = 'ttin-lookup-hit-meta';
+            meta.textContent = '\u00c9tage ' + entry.floor + ' \u00b7 Qty ' + entry.qty + (entry.inQuota ? (' \u00b7 pris ' + entry.take) : '');
+            hit.appendChild(meta);
+
+            var actions = document.createElement('div');
+            actions.className = 'ttin-lookup-hit-actions';
+
+            if (entry.ticketId) {
+                var ticketA = document.createElement('a');
+                ticketA.href = 'https://t.corp.amazon.com/' + entry.ticketId;
+                ticketA.target = '_blank'; ticketA.rel = 'noopener noreferrer';
+                ticketA.className = 'ttin-lookup-btn';
+                ticketA.textContent = '\uD83C\uDFAB ' + entry.ticketId;
+                actions.appendChild(ticketA);
+            }
+
+            var fcrA = document.createElement('a');
+            fcrA.href = FCR_BASE + '/' + currentFC + '/results/inventory?s=' + encodeURIComponent(entry.asin || '');
+            fcrA.target = '_blank'; fcrA.rel = 'noopener noreferrer';
+            fcrA.className = 'ttin-lookup-btn';
+            fcrA.textContent = '\uD83D\uDD17 FCResearch';
+            actions.appendChild(fcrA);
+
+            if (entry.row) {
+                var jumpBtn = document.createElement('button');
+                jumpBtn.className = 'ttin-lookup-btn';
+                jumpBtn.textContent = '\uD83D\uDCCD Voir dans le panneau';
+                jumpBtn.onclick = function() { scrollToHit(entry); };
+                actions.appendChild(jumpBtn);
+            }
+
+            hit.appendChild(actions);
+            box.appendChild(hit);
+        });
+    }
+
+    function doBinLookup(raw) {
+        var key = normalizeBin(raw);
+        if (!key) return;
+        renderLookupResult(raw, binIndex.get(key));
+    }
+
+    panel.querySelector('#ttin-bin-lookup-go').onclick = function() {
+        doBinLookup(panel.querySelector('#ttin-bin-lookup-inp').value);
+    };
+    panel.querySelector('#ttin-bin-lookup-inp').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') doBinLookup(this.value);
+    });
+
+    // ── Capture scanner code-barres (optionnelle, désactivée par défaut) ───
+    // Distingue un scanner (frappe très rapide) d'une frappe humaine normale
+    // via le rythme entre les touches, pour éviter d'intercepter un Entrée
+    // tapé à la main ailleurs sur la page.
+    panel.querySelector('#ttin-scan-capture-toggle').onclick = function() {
+        scanCaptureOn = !scanCaptureOn;
+        this.textContent = '\uD83D\uDCE1 Capture scanner : ' + (scanCaptureOn ? 'ON' : 'OFF');
+        this.classList.toggle('on', scanCaptureOn);
+    };
+
+    var scanBuffer = '', scanStartTime = 0, lastCharTime = 0;
+    document.addEventListener('keydown', function(e) {
+        if (!scanCaptureOn) return;
+        var ae = document.activeElement;
+        if (ae && ae.id === 'ttin-bin-lookup-inp') return; // champ dédié : frappe normale
+
+        var now = Date.now();
+        if (e.key === 'Enter') {
+            var fastEnough = scanStartTime && (now - scanStartTime) < Math.max(scanBuffer.length * 60, 200);
+            if (scanBuffer.length >= 4 && fastEnough) {
+                e.preventDefault();
+                e.stopPropagation();
+                panel.querySelector('#ttin-bin-lookup-inp').value = scanBuffer;
+                doBinLookup(scanBuffer);
+            }
+            scanBuffer = ''; scanStartTime = 0;
+            return;
+        }
+        if (e.key.length === 1) {
+            if (!scanBuffer || (lastCharTime && (now - lastCharTime) > 150)) {
+                scanBuffer = '';
+                scanStartTime = now;
+            }
+            scanBuffer += e.key;
+            lastCharTime = now;
+        }
+    });
 
     function extractASIN(text) {
         var m = text.match(/\b((?:B0|X0|ZZ)[A-Z0-9]{8})\b/i);
@@ -470,6 +682,7 @@
     function scanPage() {
         var area = panel.querySelector('#ttin-area');
         area.innerHTML = '';
+        binIndex.clear();
         selectedType = 'ALL'; // reset filtre type à chaque scan
         var found = new Map();
 
@@ -582,6 +795,17 @@
             headLeft.appendChild(ticketBtn);
         }
 
+        // Bouton lien direct FCResearch pour cet ASIN
+        var fcrBtn = document.createElement('a');
+        fcrBtn.href = FCR_BASE + '/' + currentFC + '/results/inventory?s=' + encodeURIComponent(asin);
+        fcrBtn.target = '_blank';
+        fcrBtn.rel = 'noopener noreferrer';
+        fcrBtn.textContent = '\uD83D\uDD17 FCR';
+        fcrBtn.title = 'Ouvrir cet ASIN sur FCResearch';
+        fcrBtn.style.cssText = 'flex-shrink:0;padding:1px 7px;border-radius:4px;background:#ede9fe;color:#6d28d9;font-size:10px;text-decoration:none;white-space:nowrap;';
+        fcrBtn.onclick = function(e) { e.stopPropagation(); };
+        headLeft.appendChild(fcrBtn);
+
         var headTog = document.createElement('span');
         headTog.className = 'ttin-card-tog';
         headTog.textContent = '\u25bc';
@@ -645,7 +869,7 @@
                     var pw2 = body.querySelector('.ttin-progress-wrap');
                     if (lb2) lb2.remove();
                     if (pw2) pw2.remove();
-                    renderFloors(body, binsOk, maxPerFloor, selectedFloor);
+                    renderFloors(body, binsOk, maxPerFloor, selectedFloor, { asin: asin, title: title, ticketId: ticketId, card: card });
                     if (onDone) onDone();
                 }
             );
@@ -843,7 +1067,8 @@
         });
     }
 
-    function renderFloors(container, bins, maxPerFloor, floorFilter) {
+    function renderFloors(container, bins, maxPerFloor, floorFilter, meta) {
+        meta = meta || {};
         if (!bins.length) {
             var msg = document.createElement('div');
             msg.className = 'ttin-empty';
@@ -908,6 +1133,17 @@
 
                     var row = document.createElement('div');
                     row.className = 'ttin-bin';
+                    row.dataset.bin = b.bin;
+
+                    var doneBtn = document.createElement('span');
+                    doneBtn.className = 'ttin-done-toggle';
+                    doneBtn.textContent = '\u2713';
+                    doneBtn.title = 'Marquer comme fait';
+                    doneBtn.onclick = function(e) {
+                        e.stopPropagation();
+                        row.classList.toggle('done');
+                        doneBtn.classList.toggle('active');
+                    };
 
                     var qrTrigger = document.createElement('span');
                     qrTrigger.className = 'ttin-qr-trigger';
@@ -940,12 +1176,38 @@
 
                     actions.appendChild(qtyBadge);
                     actions.appendChild(copyBtn);
+                    row.appendChild(doneBtn);
                     row.appendChild(qrTrigger);
                     row.appendChild(infoSpan);
                     row.appendChild(actions);
                     div.appendChild(row);
+
+                    // Indexation pour la recherche inversée (bin trouvé + affiché)
+                    var key = normalizeBin(b.bin);
+                    if (!binIndex.has(key)) binIndex.set(key, []);
+                    binIndex.get(key).push({
+                        bin: b.bin, qty: b.qty, take: b.take, disp: b.disp,
+                        floor: floor, aisle: b.aisle, shelf: b.shelf, slot: b.slot,
+                        asin: meta.asin, title: meta.title, ticketId: meta.ticketId,
+                        card: meta.card, inQuota: true, row: row
+                    });
                 });
             }
+
+            // Bins résolus mais hors quota 5% : pas affichés en liste, mais indexés
+            // quand même pour que la recherche inversée les retrouve.
+            for (var j = sel.length; j < list.length; j++) {
+                var ob = list[j];
+                var okey = normalizeBin(ob.bin);
+                if (!binIndex.has(okey)) binIndex.set(okey, []);
+                binIndex.get(okey).push({
+                    bin: ob.bin, qty: ob.qty, take: 0, disp: ob.disp,
+                    floor: floor, aisle: ob.aisle, shelf: ob.shelf, slot: ob.slot,
+                    asin: meta.asin, title: meta.title, ticketId: meta.ticketId,
+                    card: meta.card, inQuota: false, row: null
+                });
+            }
+
             container.appendChild(div);
         });
     }
